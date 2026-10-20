@@ -33,6 +33,7 @@
 #include <lang/state.h>
 #include <packages/pkg.h>
 #include <packages/sfo.h>
+#include <packages/vci.h>
 #include <renderer/state.h>
 #include <renderer/texture_cache.h>
 
@@ -40,6 +41,7 @@
 #include <pugixml.hpp>
 
 #include <modules/module_parent.h>
+#include <modules/sysmem_state.h>
 #include <string>
 #include <util/log.h>
 #include <util/string_utils.h>
@@ -275,6 +277,15 @@ static bool install_archive_content(EmuEnvState &emuenv, const ZipPtr &zip, cons
 
             std::string replace_filename = m_filename.substr(content_path.size());
             const fs::path file_output = (output_path / fs_utils::utf8_to_path(replace_filename)).generic_path();
+
+            const fs::path normalized_output_path = output_path.lexically_normal();
+            const fs::path normalized_file_output = file_output.lexically_normal();
+            const fs::path relative_to_output = normalized_file_output.lexically_relative(normalized_output_path);
+            if (relative_to_output.empty() || relative_to_output.string().starts_with("..")) {
+                LOG_ERROR("Rejecting archive entry whose path escapes the install directory: {}", m_filename);
+                continue;
+            }
+
             if (mz_zip_reader_is_file_a_directory(zip.get(), i)) {
                 fs::create_directories(file_output);
             } else {
@@ -373,6 +384,17 @@ std::vector<size_t> archive_install_order(const std::vector<fs::path> &archives)
 }
 
 std::vector<ContentInfo> install_archive(EmuEnvState &emuenv, const fs::path &archive_path, const std::function<void(ArchiveContents)> &progress_callback, const ReinstallCallback &reinstall_callback) {
+    if (string_utils::tolower(archive_path.extension().string()) == ".vci") {
+        const auto vci_progress = [&](float pct) {
+            if (progress_callback)
+                progress_callback({ 1.f, 1.f, pct });
+        };
+        const bool state = install_vci(archive_path, emuenv, vci_progress);
+        std::vector<ContentInfo> content_installed{};
+        content_installed.push_back({ emuenv.app_info.app_title, emuenv.app_info.app_title_id, emuenv.app_info.app_category, emuenv.app_info.app_content_id, archive_path.string(), state });
+        return content_installed;
+    }
+
     FILE *vpk_fp = FOPEN(archive_path.c_str(), "rb");
     if (!vpk_fp) {
         LOG_CRITICAL("Failed to load archive file in path: {}", fs_utils::path_to_utf8(archive_path));
@@ -522,7 +544,7 @@ static ExitCode load_app_impl(SceUID &main_module_id, EmuEnvState &emuenv, const
         ::call_import(emuenv, cpu, nid, thread_id);
     };
     emuenv.kernel.process_exit_callback = [&emuenv](int res, std::optional<AppLaunchRequest> relaunch) {
-        emuenv.post_app_launch_request(relaunch.value_or(AppLaunchRequest{ .reason = AppLaunchReason::ProcessExit }));
+        emuenv.post_app_launch_request(relaunch.value_or(AppLaunchRequest{ .reason = AppLaunchReason::ProcessExit, .exit_code = res }));
     };
     emuenv.kernel.accurate_thread_scheduling = emuenv.cfg.current_config.accurate_thread_scheduling;
     // preempt-on-wake goes with accurate thread scheduling on every platform
@@ -593,6 +615,7 @@ static ExitCode load_app_impl(SceUID &main_module_id, EmuEnvState &emuenv, const
         sfo::load(emuenv.sfo_handle, param_sfo);
 
     init_exported_vars(emuenv);
+    create_system_font_blocks(emuenv);
 
     // Load main executable
     if (!launch_request.self_path.empty()) {
@@ -606,7 +629,20 @@ static ExitCode load_app_impl(SceUID &main_module_id, EmuEnvState &emuenv, const
     if (main_module_id >= 0) {
         const auto module = emuenv.kernel.loaded_modules[main_module_id];
         LOG_INFO("Main executable {} ({}) loaded", module->info.module_name, emuenv.self_path);
-        const Patches patches = get_patches(emuenv.patch_path, emuenv.io.title_id, "app0:" + emuenv.self_path);
+        uint32_t module_nid = 0;
+        {
+            const std::lock_guard<std::mutex> guard(emuenv.kernel.export_nids_mutex);
+            for (const auto &[nid, uid] : emuenv.kernel.module_uid_by_nid) {
+                if (uid == static_cast<uint32_t>(main_module_id))
+                    module_nid = nid;
+            }
+        }
+        LOG_INFO("Main executable NID: {} (for the NID attribute of a patch)", fmt::format("0x{:08X}", module_nid));
+
+        const std::string bin = "app0:" + emuenv.self_path;
+        Patches patches = get_patches(emuenv.patch_path, emuenv.io.title_id, bin);
+        const Patches xml_patches = get_xml_patches(emuenv.patch_path, emuenv.io.title_id, bin, emuenv.app_info.app_version, module_nid);
+        patches.insert(patches.end(), xml_patches.begin(), xml_patches.end());
         if (!patches.empty())
             do_patches(emuenv.mem, patches, module->info);
     } else
@@ -798,6 +834,9 @@ ExitCode run_app(EmuEnvState &emuenv, int32_t main_module_id, const AppLaunchReq
         return InitThreadFailed;
     }
     emuenv.main_thread_id = main_thread->id;
+
+    // Before any guest code runs, module_start functions included, since they can read it too
+    emuenv.set_launch_uri(emuenv.cfg.launch_uri);
 
     // Run `module_start` export (entry point) of loaded libraries
     for (auto &[_, module] : emuenv.kernel.loaded_modules) {

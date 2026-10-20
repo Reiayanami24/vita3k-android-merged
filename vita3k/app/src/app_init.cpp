@@ -211,11 +211,11 @@ static Config::CurrentConfig get_runtime_current_config_after_save(
         case config::RestartRequiredSetting::GraphicsDevice:
             runtime_current.gpu_idx = previous_current.gpu_idx;
             break;
-#ifdef __ANDROID__
         case config::RestartRequiredSetting::CustomDriver:
+#ifdef __ANDROID__
             runtime_current.custom_driver_name = previous_current.custom_driver_name;
-            break;
 #endif
+            break;
         case config::RestartRequiredSetting::HighAccuracy:
             runtime_current.high_accuracy = previous_current.high_accuracy;
             break;
@@ -251,7 +251,9 @@ void set_current_config(EmuEnvState &emuenv, const std::string &app_path) {
 }
 
 // Initializes paths to their respective defaults, to be changed later by settings or CLI
-void init_paths(Root &root_paths) {
+// Returns true if in portable mode, false otherwise
+bool init_paths(Root &root_paths) {
+    bool portable = false;
 #ifdef __ANDROID__
     fs::path internal_storage_path = fs::path(SDL_GetAndroidExternalStoragePath()) / "";
     fs::path vita_storage_path = internal_storage_path / "vita/";
@@ -289,6 +291,7 @@ void init_paths(Root &root_paths) {
 #endif
 
     if (fs::is_directory(portable_path)) {
+        portable = true;
         // If a portable directory exists, use it for everything else.
         // Note that vita_fs_path should not be the same as the other paths.
         root_paths.set_vita_fs_path(portable_path / "fs" / "");
@@ -368,6 +371,7 @@ void init_paths(Root &root_paths) {
         const constexpr char *static_asset_paths[] = {
             "/usr/local/share/Vita3K",
             "/usr/share/Vita3K",
+            "/app/share/Vita3K",
         };
 
         // Check both normal case and all lowercase paths
@@ -386,8 +390,10 @@ void init_paths(Root &root_paths) {
         if (fs::exists(exe_path / "shaders-builtin"))
             root_paths.set_static_assets_path(exe_path);
 
-        // AppImage root
-        if (APPDIR != NULL && fs::exists(fs::path(APPDIR) / "usr/share/Vita3K"))
+        // AppImage data directory (Anylinux layout, then the legacy layout)
+        if (APPDIR != NULL && fs::exists(fs::path(APPDIR) / "share/Vita3K"))
+            root_paths.set_static_assets_path(fs::path(APPDIR) / "share/Vita3K");
+        else if (APPDIR != NULL && fs::exists(fs::path(APPDIR) / "usr/share/Vita3K"))
             root_paths.set_static_assets_path(fs::path(APPDIR) / "usr/share/Vita3K");
 
         // shared path
@@ -410,12 +416,7 @@ void init_paths(Root &root_paths) {
     fs::create_directories(root_paths.get_log_path() / "texturelog");
     fs::create_directories(root_paths.get_patch_path());
 
-    const auto gui_configs_source_path = root_paths.get_static_assets_path() / "data" / "gui-configs";
-    if (fs::is_directory(gui_configs_source_path)) {
-        const auto gui_configs_destination_path = root_paths.get_config_path() / "gui-configs";
-        if (!fs_utils::copy_directory_contents(gui_configs_source_path, gui_configs_destination_path, fs::copy_options::overwrite_existing))
-            LOG_WARN("Failed to copy GUI configs from {} to {}", gui_configs_source_path, gui_configs_destination_path);
-    }
+    return portable;
 }
 
 bool init(EmuEnvState &state, Config &cfg, const Root &root_paths) {
@@ -481,6 +482,10 @@ bool init(EmuEnvState &state, Config &cfg, const Root &root_paths) {
 #endif
 
     state.motion.init();
+
+    if (state.cfg.controller_binds.empty() || state.cfg.controller_binds.size() != 15
+        || state.cfg.controller_axis_binds.empty() || state.cfg.controller_axis_binds.size() != 6)
+        reset_controller_binding(state);
 
     return true;
 }
@@ -562,6 +567,7 @@ void reset_app_state(EmuEnvState &state) {
     state.current_app_title.clear();
     state.self_name.clear();
     state.self_path.clear();
+    state.clear_launch_uri();
     state.main_thread_id = 0;
     state.drop_inputs = false;
     state.missing_nids.clear();

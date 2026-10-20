@@ -54,7 +54,9 @@ import java.util.Arrays;
 
 import org.libsdl.app.SDLActivity;
 import org.libsdl.app.SDLControllerManager;
+import org.libsdl.app.VitaControllerPoller;
 import org.libsdl.app.SDLDummyEdit;
+import org.libsdl.app.VitaTextEdit;
 import org.libsdl.app.SDLSurface;
 import org.vita3k.emulator.data.AppStorage;
 import org.vita3k.emulator.data.NativeImeState;
@@ -406,7 +408,7 @@ public class Emulator extends SDLActivity
     // called by the native loop (SDL's own rescan stalls after an SDL re-init)
     @Keep
     public void pollControllerDevices() {
-        SDLControllerManager.pollInputDevices();
+        VitaControllerPoller.pollInputDevices();
     }
 
     private String describeView(View view) {
@@ -881,7 +883,7 @@ public class Emulator extends SDLActivity
 
         mLayout.removeView(mTextEdit);
         final VitaTextEdit replacement = new VitaTextEdit(this);
-        replacement.setInputType(lastTextInputType);
+        replacement.applyInputType(lastTextInputType);
         mTextEdit = replacement;
         mLayout.addView(mTextEdit, params);
 
@@ -914,13 +916,15 @@ public class Emulator extends SDLActivity
 
         if (mTextEdit == null) {
             final VitaTextEdit replacement = new VitaTextEdit(this);
-            replacement.setInputType(lastTextInputType);
+            replacement.applyInputType(lastTextInputType);
             mTextEdit = replacement;
             mLayout.addView(mTextEdit, new RelativeLayout.LayoutParams(lastTextInputLayoutParams));
         } else {
             ensureVitaTextEdit();
             mTextEdit.setLayoutParams(new RelativeLayout.LayoutParams(lastTextInputLayoutParams));
-            mTextEdit.setInputType(lastTextInputType);
+            if (mTextEdit instanceof VitaTextEdit) {
+                ((VitaTextEdit) mTextEdit).applyInputType(lastTextInputType);
+            }
         }
 
         mTextEdit.setVisibility(View.VISIBLE);

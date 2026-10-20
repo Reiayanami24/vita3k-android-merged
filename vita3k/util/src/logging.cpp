@@ -104,7 +104,7 @@ static void apply_android_log_policy(const spdlog::level::level_enum log_level) 
 ExitCode init(const Root &root_paths, bool use_stdout) {
     sinks.clear();
 #ifdef __ANDROID__
-    s_logcat_sink = use_stdout ? std::make_shared<spdlog::sinks::android_sink_mt>() : nullptr;
+    s_logcat_sink = use_stdout ? std::make_shared<spdlog::sinks::android_sink_mt>("Vita3K") : nullptr;
     if (s_logcat_sink)
         sinks.push_back(s_logcat_sink);
 #else
@@ -212,7 +212,7 @@ void rebuild_default_logger() {
         spdlog::init_thread_pool(ASYNC_LOG_QUEUE_SIZE, 1);
     });
 
-    auto duplicate_filter = std::make_shared<spdlog::sinks::dup_filter_sink_mt>(std::chrono::seconds(2), spdlog::level::info);
+    auto duplicate_filter = std::make_shared<spdlog::sinks::dup_filter_sink_mt>(std::chrono::seconds(2));
     for (const auto &sink : sinks)
         duplicate_filter->add_sink(sink);
 

@@ -105,6 +105,7 @@ struct IOState {
         std::string savedata0;
         std::string savedata1; // another title's save data mounted by sceAppUtilSaveDataMount, empty when none
         std::string addcont0;
+        std::string cache0;
     } device_paths;
 
     std::string addcont;

@@ -1,6 +1,6 @@
 name: "Pull Request Labeler"
 
-on: 
+on:
  - pull_request_target
 
 jobs:
@@ -11,7 +11,7 @@ jobs:
       pull-requests: write
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/labeler@v6
+    - uses: actions/labeler@v7
       with:
         repo-token: "${{ secrets.GITHUB_TOKEN }}"
         sync-labels: true

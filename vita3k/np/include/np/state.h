@@ -26,6 +26,8 @@
 #include <map>
 #include <mutex>
 #include <thread>
+#include <optional>
+#include <unordered_map>
 #include <vector>
 
 struct SceNpServiceStateCallback {
@@ -92,6 +94,19 @@ struct NpMatching2State {
     bool stop = false;
 };
 
+struct NpTusRequest {
+    SceInt32 title_context_id = 0;
+    std::optional<SceInt32> result;
+};
+
+struct NpTusState {
+    bool inited = false;
+    std::mutex access_mutex;
+    // Simulated handles and immediate TSS failures; no PSN authentication or storage.
+    std::unordered_map<SceUID, bool> title_contexts;
+    std::unordered_map<SceUID, NpTusRequest> requests;
+};
+
 struct NpState {
     bool inited = false;
     np_callbacks cbs;
@@ -99,5 +114,6 @@ struct NpState {
 
     NpTrophyState trophy_state;
     NpMatching2State matching2;
+    NpTusState tus_state;
     np::CommunicationID comm_id;
 };

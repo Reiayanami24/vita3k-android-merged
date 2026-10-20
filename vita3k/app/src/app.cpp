@@ -63,6 +63,7 @@ void reset_perf_metrics(EmuEnvState &emuenv) {
         return;
 
     auto &renderer = *emuenv.renderer;
+    renderer.perf_overlay.has_data = false;
     renderer.perf_overlay.fps = 0;
     renderer.perf_overlay.avg_fps = 0;
     renderer.perf_overlay.min_fps = 0;
@@ -330,6 +331,7 @@ bool update_runtime_metrics(EmuEnvState &emuenv, LaunchRuntimeMetrics &metrics) 
         return true;
 
     auto &renderer = *emuenv.renderer;
+    renderer.perf_overlay.has_data = true;
     renderer.perf_overlay.fps = emuenv.fps;
     renderer.perf_overlay.avg_fps = emuenv.avg_fps;
     renderer.perf_overlay.min_fps = emuenv.min_fps;
@@ -354,6 +356,7 @@ void abort_game_launch(EmuEnvState &emuenv) {
     emuenv.license_title_id.clear();
     emuenv.self_name.clear();
     emuenv.self_path.clear();
+    emuenv.clear_launch_uri();
     emuenv.main_thread_id = 0;
     emuenv.app_info = {};
     emuenv.drop_inputs = false;

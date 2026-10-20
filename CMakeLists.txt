@@ -19,7 +19,7 @@ include("external/dynarmic/CMakeModules/DetectArchitecture.cmake")
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-set(CMAKE_OSX_DEPLOYMENT_TARGET 11.0)
+set(CMAKE_OSX_DEPLOYMENT_TARGET 13.3)
 
 # workaround for SDL due to cmake bug
 # https://github.com/libsdl-org/SDL/issues/6454
@@ -48,7 +48,6 @@ else()
 	if((ARCHITECTURE STREQUAL "x86_64") OR APPLE)
 		option(USE_DISCORD_RICH_PRESENCE "Build Vita3K with Discord Rich Presence" ON)
 	endif()
-	option(BUILD_APPIMAGE "Build an AppImage." OFF)
 endif()
 
 option(FORCE_BUILD_OPENSSL_MAC OFF)
@@ -266,29 +265,18 @@ get_boost()
 
 if(WIN32)
 	add_compile_definitions("_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS" "_CRT_SECURE_NO_WARNINGS" "NOMINMAX")
+endif()
 
-	# Disable inclusion of timestamps in PCH files on Windows
-	if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-		string(APPEND CMAKE_C_FLAGS " -Xclang -fno-pch-timestamp")
-		string(APPEND CMAKE_CXX_FLAGS " -Xclang -fno-pch-timestamp")
-	endif()
+# Disable inclusion of timestamps in precompiled headers on Windows
+if(CMAKE_HOST_WIN32 AND (CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
+	string(APPEND CMAKE_C_FLAGS " -Xclang -fno-pch-timestamp")
+	string(APPEND CMAKE_CXX_FLAGS " -Xclang -fno-pch-timestamp")
 endif()
 
 # Allow per-translation-unit parallel builds when using MSVC
 if(CMAKE_GENERATOR MATCHES "Visual Studio" AND (CMAKE_C_COMPILER_ID MATCHES "MSVC|Intel|Clang" OR CMAKE_CXX_COMPILER_ID MATCHES "MSVC|Intel|Clang"))
 	string(APPEND CMAKE_C_FLAGS " /MP")
 	string(APPEND CMAKE_CXX_FLAGS " /MP")
-endif()
-
-if (${BUILD_APPIMAGE})
-	if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-		set(LINUXDEPLOY_COMMAND "${CMAKE_SOURCE_DIR}/appimage/linuxdeploy.AppImage" CACHE INTERNAL "")
-		if (NOT EXISTS "${LINUXDEPLOY_COMMAND}")
-			message(FATAL_ERROR "Could not find linuxdeploy at ${LINUXDEPLOY_COMMAND}!")
-		endif()
-	else()
-		message(FATAL_ERROR "Cannot build an AppImage for a non-Linux host.")
-	endif()
 endif()
 
 add_subdirectory(external)

@@ -413,10 +413,11 @@ int touch_get(const SceUID thread_id, EmuEnvState &emuenv, const SceUInt32 &port
 
     int nb_returned_data = 1;
     if (is_peek) {
+        // sceTouchPeek returns 1 to count buffers, never 0: Disgaea 3 indexes the last one unchecked
         if (emuenv.touch.touch_mode[port])
             nb_returned_data = count;
         else
-            nb_returned_data = 0;
+            nb_returned_data = 1;
     } else {
         const uint64_t current_vcount = emuenv.display.vblank_count.load();
         if (current_vcount <= emuenv.touch.last_vcount[port_idx]) {

@@ -48,6 +48,11 @@ struct SceKernelAllocMemBlockKernelOpt {
 constexpr SceUInt32 SCE_KERNEL_ALLOC_MEMBLOCK_ATTR_HAS_VBASE = 0x1;
 constexpr SceUInt32 SCE_KERNEL_ALLOC_MEMBLOCK_ATTR_HAS_ALIGNMENT = 4;
 
+// memoryType and access as SceKernelMemBlockInfo reports them
+constexpr SceUInt32 SCE_KERNEL_MEMORY_ACCESS_R = 0x04;
+constexpr SceUInt32 SCE_KERNEL_MEMORY_ACCESS_W = 0x02;
+constexpr SceUInt32 SCE_KERNEL_MEMORY_TYPE_NORMAL = 0xD0;
+
 DECL_EXPORT(SceUID, ksceKernelAllocMemBlock, const char *name, SceKernelMemBlockType type, SceSize size, SceKernelAllocMemBlockKernelOpt *opt);
 DECL_EXPORT(int, ksceKernelGetMemBlockBase, SceUID uid, Ptr<void> *basep);
 DECL_EXPORT(int, ksceKernelFreeMemBlock, SceUID uid);

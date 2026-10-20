@@ -50,13 +50,13 @@ static void ctr_init(uint8_t *counter, uint8_t *iv, uint64_t n) {
     }
 }
 
-static int execute(std::string &zrif, fs::path &title_src, fs::path &title_dst, F00DEncryptorTypes type, std::string &f00d_arg) {
+static int execute(std::string &zrif, fs::path &title_src, fs::path &title_dst, F00DEncryptorTypes type, std::string &f00d_arg, PfsProgressCallback progress = nullptr) {
     std::string title_src_str = title_src.string();
     std::string title_dst_str = title_dst.string();
-    return execute(zrif, title_src_str, title_dst_str, type, f00d_arg);
+    return execute(zrif, title_src_str, title_dst_str, type, f00d_arg, progress);
 }
 
-bool decrypt_install_nonpdrm(EmuEnvState &emuenv, const fs::path &drmlicpath, const fs::path &title_path) {
+bool decrypt_install_nonpdrm(EmuEnvState &emuenv, const fs::path &drmlicpath, const fs::path &title_path, const std::function<void(float)> &progress_callback) {
     fs::path title_id_src = title_path;
     fs::path title_id_dst = fs_utils::path_concat(title_path, "_dec");
     fs::ifstream binfile(drmlicpath, std::ios::in | std::ios::binary | std::ios::ate);
@@ -64,9 +64,16 @@ bool decrypt_install_nonpdrm(EmuEnvState &emuenv, const fs::path &drmlicpath, co
     F00DEncryptorTypes f00d_enc_type = F00DEncryptorTypes::native;
     std::string f00d_arg = std::string();
 
+    PfsProgressCallback pfs_progress = nullptr;
+    if (progress_callback) {
+        pfs_progress = [&progress_callback](std::uint64_t processed, std::uint64_t total, const std::string &) {
+            progress_callback(total ? static_cast<float>(processed) / static_cast<float>(total) : 1.f);
+        };
+    }
+
     const bool is_theme = title_path.parent_path().filename() == "theme";
     boost::system::error_code ec;
-    if (execute(zRIF, title_id_src, title_id_dst, f00d_enc_type, f00d_arg) < 0 && !is_theme) {
+    if (execute(zRIF, title_id_src, title_id_dst, f00d_enc_type, f00d_arg, pfs_progress) < 0 && !is_theme) {
         fs::remove_all(title_id_dst, ec);
         return false;
     }

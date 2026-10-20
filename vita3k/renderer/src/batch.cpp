@@ -299,6 +299,10 @@ static void render_loop(renderer::State &state, DisplayState &display, GxmState 
 
             process_batches(state, state.features, mem, config, 500);
 
+            // a paused app does not need frames as fast as possible when nothing paces them
+            if (state.paused.load(std::memory_order_relaxed) && !config.current_config.v_sync)
+                std::this_thread::sleep_for(std::chrono::milliseconds(16));
+
             if (state.render_abort.load(std::memory_order_relaxed))
                 break;
 

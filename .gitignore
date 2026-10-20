@@ -15,9 +15,13 @@ build
 # CMake user presets
 CMakeUserPresets.json
 compile_commands.json
-# AppImage builder
-appimage/linuxdeploy*.AppImage
 /.gdbinit
+
+# Locally downloaded AppImage tools
+/appimage/*.AppImage
+
+# generated linux metainfo.xml
+dist/linux/*.metainfo.xml
 
 # Built application files
 *.apk
@@ -33,6 +37,9 @@ appimage/linuxdeploy*.AppImage
 bin/
 gen/
 out/
+
+# vcpkg packages
+vcpkg_installed/
 
 # Gradle files
 .gradle/
@@ -84,3 +91,7 @@ fastlane/readme.md
 
 # Copilot local config
 .github/copilot-instructions.md
+
+# Translations
+/template/
+/android/app/src/main/res/values-*/strings.xml

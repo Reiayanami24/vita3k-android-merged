@@ -86,6 +86,20 @@ void Atrac9DecoderState::load_state(const Atrac9DecoderSavedState *src) {
         std::copy_n(src->prev_values[1], 256, frame.Channels[1]->Mdct.ImdctPrevious);
 }
 
+// LibAtrac9 learns a frame's size only while unpacking it, so a corrupt frame can read past the
+// superframe. Decode from a zero-padded copy of what is left and reject a frame that overran it.
+static int Atrac9DecodeBounded(void *handle, const uint8_t *data, int bytes_left, short *pcm, int *bytes_used) {
+    constexpr int OVERRUN_PADDING = 2048;
+    if (!data || bytes_left <= 0)
+        return ERR_UNPACK_SUPERFRAME_FLAG_INVALID;
+    std::vector<uint8_t> bounded(static_cast<size_t>(bytes_left) + OVERRUN_PADDING, 0);
+    memcpy(bounded.data(), data, bytes_left);
+    const int res = Atrac9Decode(handle, bounded.data(), pcm, bytes_used);
+    if (res == ERR_SUCCESS && *bytes_used > bytes_left)
+        return ERR_UNPACK_SUPERFRAME_FLAG_INVALID;
+    return res;
+}
+
 bool Atrac9DecoderState::send(const uint8_t *data, uint32_t size) {
     Atrac9CodecInfo *info = static_cast<Atrac9CodecInfo *>(atrac9_info);
 

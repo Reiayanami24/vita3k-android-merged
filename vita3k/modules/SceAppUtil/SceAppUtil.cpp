@@ -254,7 +254,7 @@ std::string construct_slotparam_path(const unsigned int data) {
 
 EXPORT(int, sceAppUtilSaveDataDataRemove, SceAppUtilSaveDataFileSlot *slot, SceAppUtilSaveDataRemoveItem *files, unsigned int fileNum, SceAppUtilMountPoint *mountPoint) {
     TRACY_FUNC(sceAppUtilSaveDataDataRemove, slot, files, fileNum, mountPoint);
-    if (!files && fileNum)
+    if ((!files && fileNum) || (slot && (slot->id >= SCE_APPUTIL_SAVEDATA_SLOT_MAX)))
         return RET_ERROR(SCE_APPUTIL_ERROR_PARAMETER);
 
     for (unsigned int i = 0; i < fileNum; i++) {
@@ -280,6 +280,9 @@ EXPORT(int, sceAppUtilSaveDataDataRemove, SceAppUtilSaveDataFileSlot *slot, SceA
 EXPORT(int, sceAppUtilSaveDataDataSave, SceAppUtilSaveDataFileSlot *slot, SceAppUtilSaveDataDataSaveItem *files, unsigned int fileNum, SceAppUtilMountPoint *mountPoint, SceSize *requiredSizeKiB) {
     TRACY_FUNC(sceAppUtilSaveDataDataSave, slot, files, fileNum, mountPoint, requiredSizeKiB);
     SceUID fd;
+
+    if (slot && (slot->id >= SCE_APPUTIL_SAVEDATA_SLOT_MAX))
+        return RET_ERROR(SCE_APPUTIL_ERROR_PARAMETER);
 
     if (requiredSizeKiB)
         // requiredSizeKiB must be set to 0 if there is enough space available
@@ -610,16 +613,30 @@ EXPORT(SceInt32, sceAppUtilSystemParamGetInt, SceSystemParamId paramId, SceInt32
 
 EXPORT(int, sceAppUtilSystemParamGetString, unsigned int paramId, SceChar8 *buf, SceSize bufSize) {
     TRACY_FUNC(sceAppUtilSystemParamGetString, paramId, buf, bufSize);
-    constexpr auto devname_len = SCE_SYSTEM_PARAM_USERNAME_MAXSIZE;
-    char devname[devname_len];
     switch (paramId) {
-    case SCE_SYSTEM_PARAM_ID_USER_NAME:
-        if (gethostname(devname, devname_len)) {
-            // fallback to User Name
-            std::strncpy(devname, emuenv.io.user_name.c_str(), sizeof(devname));
+    case SCE_SYSTEM_PARAM_ID_USER_NAME: {
+        if (bufSize == 0) {
+            return RET_ERROR(SCE_APPUTIL_ERROR_PARAMETER);
         }
-        std::strncpy(reinterpret_cast<char *>(buf), devname, sizeof(devname));
+        // copy user name into buf with size SCE_SYSTEM_PARAM_USERNAME_MAXSIZE or bufSize, whichever is smaller
+        const auto copySize = std::min(bufSize, static_cast<unsigned int>(SCE_SYSTEM_PARAM_USERNAME_MAXSIZE));
+        std::strncpy(reinterpret_cast<char *>(buf), emuenv.io.user_name.c_str(), copySize - 1);
+        buf[copySize - 1] = '\0';
+        // fallback to hostname
+        if (buf[0] == '\0') {
+            char devname[SCE_SYSTEM_PARAM_USERNAME_MAXSIZE];
+            if (gethostname(devname, SCE_SYSTEM_PARAM_USERNAME_MAXSIZE) == 0) {
+                std::strncpy(reinterpret_cast<char *>(buf), devname, copySize - 1);
+                buf[copySize - 1] = '\0';
+            }
+            // double fallback to "Vita3K"
+            if (buf[0] == '\0') {
+                std::strncpy(reinterpret_cast<char *>(buf), "Vita3K", copySize - 1);
+                buf[copySize - 1] = '\0';
+            }
+        }
         break;
+    }
     default:
         return RET_ERROR(SCE_APPUTIL_ERROR_PARAMETER);
     }

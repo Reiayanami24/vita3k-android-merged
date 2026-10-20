@@ -778,8 +778,7 @@ bool USSETranslatorVisitor::vcomp(
 
     case Opcode::VEXP: {
         // y = 2^src0 => return y (USSE complex unit is base-2)
-        // hack (kind of) :
-        // define exp(Nan) as 1.0, this is needed for Freedom Wars to render properly
+        // Freedom Wars requires exp2(NaN) to return 1.0.
         const spv::Id exp_val = m_b.createBuiltinCall(m_b.getTypeId(result), std_builtins, GLSLstd450Exp2, { result });
         const spv::Id ones = utils::make_uniform_vector_from_type(m_b, m_b.getTypeId(result), 1.0f);
         const spv::Id is_nan = m_b.createUnaryOp(spv::OpIsNan, m_b.makeBoolType(), result);
@@ -1881,7 +1880,7 @@ bool USSETranslatorVisitor::vdual(
             break;
         }
         case Opcode::FEXP: {
-            // hack: set exp(nan) = 1.0 (see VEXP)
+            // Preserve exp2(NaN) = 1.0 (see VEXP).
             const spv::Id source = load(ops[0], write_mask_source);
             result = m_b.createBuiltinCall(m_b.getTypeId(source), std_builtins, GLSLstd450Exp2, { source });
             const int num_comp = m_b.getNumComponents(source);
