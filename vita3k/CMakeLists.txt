@@ -1,15 +1,15 @@
 set(VITA3K_ORG_NAME "Vita3K")
 # APP_NAME is the on-disk data folder name, keep it: DISPLAY_NAME is what the user sees
 set(VITA3K_APP_NAME "Vita3K")
-set(VITA3K_DISPLAY_NAME "Vita3K+")
+set(VITA3K_DISPLAY_NAME "Vita3kAI")
 set(VITA3K_APP_ID "org.vita3k.vita3k")
 set(VITA3K_APP_VER_HI 1)
-set(VITA3K_APP_VER_MID 3)
-set(VITA3K_APP_VER_LO 2)
+set(VITA3K_APP_VER_MID 0)
+set(VITA3K_APP_VER_LO 0)
 # two-component display version (v1.1): the numeric LO still feeds the exe FILE_VERSION resource  // Nick - Version
 set(VITA3K_APP_VERSION "v${VITA3K_APP_VER_HI}.${VITA3K_APP_VER_MID}.${VITA3K_APP_VER_LO}")
 # Release number advertised to the updater (must match "Vita3K Build: <n>" in the GitHub release body) and rise each release
-set(VITA3K_APP_NUMBER 3)
+set(VITA3K_APP_NUMBER 1)
 
 execute_process(
 	COMMAND git rev-list HEAD --count
@@ -60,7 +60,7 @@ endif()
 if(GIT_HASH STREQUAL "")
 	set(VITA3K_GIT_REV "Development version")
 	set(GIT_COUNT 0)
-elseif(((GIT_REPO STREQUAL "Vita3K") AND ((GIT_BRANCH STREQUAL "master") OR (GIT_BRANCH STREQUAL "HEAD"))) OR (GIT_REPO STREQUAL "Vita3K-Plus"))
+elseif(((GIT_REPO STREQUAL "Vita3K") AND ((GIT_BRANCH STREQUAL "master") OR (GIT_BRANCH STREQUAL "HEAD"))) OR (GIT_REPO STREQUAL "Vita3K-Plus") OR (GIT_REPO STREQUAL "vita3k-android-merged"))
 	set(VITA3K_GIT_REV "${GIT_HASH}")
 	set(VITA3K_OFFICIAL_UPDATE_BUILD 1)
 else()

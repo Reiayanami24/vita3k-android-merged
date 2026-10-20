@@ -6,11 +6,11 @@
 namespace updater {
 
 std::string release_api_url() {
-    return "https://api.github.com/repos/nckstwrt/Vita3K-Plus/releases/latest";
+    return "https://api.github.com/repos/Reiayanami24/vita3k-android-merged/releases/latest";
 }
 
 std::string release_page_url() {
-    return "https://github.com/nckstwrt/Vita3K-Plus/releases/latest";
+    return "https://github.com/Reiayanami24/vita3k-android-merged/releases/latest";
 }
 
 std::string display_version(const UpdateInfo &info) {
