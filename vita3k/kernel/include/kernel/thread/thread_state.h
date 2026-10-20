@@ -1,0 +1,248 @@
+// Vita3K emulator project
+// Copyright (C) 2026 Vita3K team
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; either version 2 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program; if not, write to the Free Software Foundation, Inc.,
+// 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+
+#pragma once
+
+#include <cpu/state.h>
+#include <kernel/callback.h>
+#include <kernel/types.h>
+#include <mem/block.h>
+#include <mem/ptr.h>
+
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <functional>
+#include <mutex>
+#include <optional>
+#include <string>
+
+struct CPUContext;
+
+struct ThreadState;
+
+extern thread_local ThreadState *g_tls_guest_thread;
+
+void guest_sched_set_cores(int cores);
+void guest_sched_release_for_block();
+void request_precise_host_timer();
+void guest_sched_forget_cpu(CPUState *cpu);
+CPUState *guest_sched_token_cpu();
+struct ThreadParams;
+struct KernelState;
+void note_audio_thread(KernelState &kernel, SceUID thread_id, const char *api);
+void start_preempt_wait(KernelState &kernel, SceUID starter_id, const std::shared_ptr<ThreadState> &started);
+void core_lock_begin_boot(uint32_t boot);
+bool core_lock_shares_core(SceInt32 a, SceInt32 b);
+void core_lock_release_for_block();
+void core_lock_take_current();
+std::string core_lock_report(KernelState &kernel);
+void request_deferred_thread_dump(const std::string &reason);
+bool take_deferred_thread_dump(std::string &reason);
+void note_guest_assert(const std::string &what);
+bool guest_assert_holds_breakers(std::string &first_note);
+void guest_assert_begin_boot();
+enum : uint8_t {
+    SIGNAL_WAIT_ENTER = 0,
+    SIGNAL_WAIT_RETURN = 1,
+    SIGNAL_SEND = 2,
+    SIGNAL_DELETE_WAKE = 3,
+};
+void note_signal_event(uint8_t op, ThreadState *caller, SceUID target, int result);
+std::string signal_event_report(const std::function<std::string(SceUID)> &name_of, size_t max_events);
+
+typedef std::unique_ptr<CPUState, std::function<void(CPUState *)>> CPUStatePtr;
+typedef std::function<void(CPUState &, uint32_t, SceUID)> CallImport;
+typedef std::function<std::string(Address)> ResolveNIDName;
+
+enum class ThreadStatus {
+    run, // Running
+    dormant, // Waiting for a job
+    suspend, // Suspended by debugger
+    wait, // Waiting to be awaken by sync object or operation
+};
+
+struct ThreadSignal {
+    ThreadSignal() = default;
+    ~ThreadSignal() = default;
+
+    bool wait();
+    bool send();
+    bool pending();
+
+private:
+    std::mutex mutex;
+    std::condition_variable recv_cond;
+    bool signaled = false;
+};
+
+struct ThreadState {
+    std::mutex mutex;
+    std::string name;
+    SceUID id;
+
+    uint32_t last_import_nid = 0;
+    uint32_t last_import_lr = 0;
+    uint32_t import_ring[16] = {};
+    uint32_t import_ring_lr[16] = {};
+    uint8_t import_ring_pos = 0;
+    void push_import_ring(uint32_t nid, uint32_t lr) {
+        import_ring[import_ring_pos & 15] = nid;
+        import_ring_lr[import_ring_pos & 15] = lr;
+        import_ring_pos++;
+    }
+    const char *wait_prim_kind = nullptr;
+    SceUID wait_prim_uid = 0;
+    uint32_t wait_extra = 0;
+    uint32_t wait_seq = 0;
+    void set_wait_reason(const char *kind, SceUID uid, uint32_t extra) {
+        wait_prim_kind = kind;
+        wait_prim_uid = uid;
+        wait_extra = extra;
+        wait_seq++;
+    }
+    Address entry_point;
+
+    Block stack;
+    int stack_size;
+    Block tls;
+
+    int priority;
+    SceInt32 affinity_mask;
+    uint64_t start_tick;
+    uint64_t last_vblank_waited;
+    // set to true if thread is processing kernel callbacks
+    bool is_processing_callbacks = false;
+
+    CPUStatePtr cpu;
+    ThreadStatus status = ThreadStatus::dormant;
+    ThreadSignal signal;
+    std::vector<CallbackPtr> callbacks;
+    std::condition_variable status_cond;
+    bool wait_for_run_precise(std::unique_lock<std::mutex> &lock, int64_t timeout_us);
+    std::vector<std::shared_ptr<ThreadState>> waiting_threads;
+    uint32_t returned_value = 0;
+
+    ThreadState() = delete;
+    explicit ThreadState(SceUID id, KernelState &kernel, MemState &mem);
+    ~ThreadState();
+
+    int init(const char *name, Ptr<const void> entry_point, int init_priority, SceInt32 affinity_mask, int stack_size, const SceKernelThreadOptParam *option);
+    int start(SceSize arglen, const Ptr<void> argp, bool run_entry_callback = false);
+    void exit(SceInt32 status);
+    void exit_delete(bool exit = true);
+    void stop_for_process_exit();
+
+    void update_status(ThreadStatus status, std::optional<ThreadStatus> expected = std::nullopt);
+    bool is_delete_requested() const { return delete_requested; }
+    Address stack_top() const;
+
+    void run_loop();
+    void raise_waiting_threads();
+
+    // this function must be called from the thread itself (inside a svc call)
+    uint32_t run_callback(Address callback_address, const std::vector<uint32_t> &args);
+
+    // this function is called from another thread when this one is dormant
+    // it is only used for module loading and gxm display queue right now
+    // args and argp are passed to thread->start as is
+    uint32_t run_guest_function(Address callback_address, SceSize args = 0, const Ptr<void> argp = Ptr<void>{});
+
+    // this is called from another thread when this one is dormant
+    uint32_t run_guest_callback(Address callback_address, const std::vector<uint32_t> &args);
+
+    void suspend();
+    void suspend_and_wait();
+    void resume(bool step = false);
+    void resume_if_suspended();
+    void release_pause();
+
+    // Stop-the-world support: distinct from suspend()/vm_suspended so they cannot cancel each other
+    void request_world_stop();
+    bool wait_world_stopped(std::chrono::steady_clock::time_point deadline);
+    bool resume_from_world();
+
+    std::string log_stack_traceback() const;
+    void report_guest_breakpoint(uint32_t pc);
+    std::string describe_suspend_state() const;
+    uint32_t guest_breakpoints = 0;
+
+    void apply_host_priority();
+    void note_audio_work(const char *api);
+    std::atomic<const char *> audio_work_api{ nullptr };
+    bool inside_hle() const { return hle_enters.load(std::memory_order_relaxed) != hle_returns.load(std::memory_order_relaxed); }
+    uint64_t hle_calls_entered() const { return hle_enters.load(std::memory_order_relaxed); }
+    bool leave_requested() const { return delete_requested || suspend_requested || world_stop_requested; }
+
+private:
+    void push_arguments(const std::vector<uint32_t> &args);
+    void dispatch_abort(CPUState &cpu);
+    void arm_wake_gate();
+    void wait_wake_gate();
+    void capture_host_cpu_clock();
+    int64_t host_cpu_now() const;
+    char host_state() const;
+
+    std::atomic<uint64_t> hle_enters{ 0 };
+    std::atomic<uint64_t> hle_returns{ 0 };
+    std::atomic<int> gated_wakees{ 0 };
+    std::atomic<SceUID> gate_waker{ 0 };
+    uint64_t gate_h0 = 0;
+    const char *gate_kind = nullptr;
+    SceUID gate_uid = 0;
+    void *host_cpu_handle = nullptr;
+    int64_t host_cpu_clock = 0;
+    int host_tid = 0;
+    std::atomic<bool> host_cpu_ready{ false };
+
+    KernelState &kernel;
+
+    CPUContext init_cpu_ctx;
+    // sceKernelExitThread (or top-level guest function return): park at dormant, thread reusable via start() / run_guest_function().
+    bool exit_requested = false;
+    // sceKernelExitDeleteThread (or external kill): will return from top-level run_loop(), then host thread joins.
+    bool delete_requested = false;
+    // Set by suspend(), consumed in run_loop() to transition to ThreadStatus::suspend.
+    bool suspend_requested = false;
+    // Suspended by sceKernelSuspendThreadForVM
+    bool vm_suspended = false;
+    // Suspended deliberately from outside all the world-stop machinery
+    bool external_suspend = false;
+    // Stop-the-world
+    bool world_stop_requested = false;
+    bool world_stopped = false;
+    // Single stepping mode.
+    bool single_stepping = false;
+    // Asked for the process to end (sceAppMgrLoadExec, sceKernelExitProcess)
+    bool stopped_for_process_exit = false;
+
+    // Number of active run_loop frames. The top-level host thread keeps one
+    // frame alive (run_loop()) while parked dormant; callbacks add nested frames.
+    int call_level = 0;
+
+    // when calling sceKernelStartThread
+    bool run_start_callback = false;
+    // when calling sceKernelExitThread or sceKernelExitDeleteThread
+    bool run_end_callback = false;
+
+    MemState &mem;
+
+public:
+    MemState &get_mem() { return mem; }
+};
+
+typedef std::shared_ptr<ThreadState> ThreadStatePtr;

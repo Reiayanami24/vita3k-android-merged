@@ -1,0 +1,354 @@
+// Vita3K emulator project
+// Copyright (C) 2026 Vita3K team
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; either version 2 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program; if not, write to the Free Software Foundation, Inc.,
+// 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+
+#include "archive.h"
+#include "interface.h"
+
+#include <app/functions.h>
+#include <codec/state.h>
+#include <app/session_controller.h>
+#include <config/functions.h>
+#include <config/version.h>
+#include <emuenv/state.h>
+#include <fstream>
+#include <gui-qt/gui_language.h>
+#include <gui-qt/gui_settings.h>
+#include <gui-qt/log_widget.h>
+#include <gui-qt/main_window.h>
+#include <gui-qt/persistent_settings.h>
+#include <io/state.h>
+#include <modules/module_parent.h>
+#include <packages/functions.h>
+#include <packages/license.h>
+#include <packages/pkg.h>
+#include <packages/sfo.h>
+#include <regex>
+#include <sdl-frontend/session.h>
+#include <shader/spirv_recompiler.h>
+#include <util/log.h>
+#include <util/string_utils.h>
+#include <util/sysinfo.h>
+
+#include <QApplication>
+#include <QMessageBox>
+#include <QSysInfo>
+
+#if USE_DISCORD
+#include <app/discord.h>
+#endif
+
+#ifdef _WIN32
+#include <combaseapi.h>
+#define SDL_MAIN_HANDLED
+#endif
+
+#ifdef TRACY_ENABLE
+#include <tracy/Tracy.hpp>
+#endif
+
+#include "gui-qt/qt_utils.h"
+
+#include <SDL3/SDL_cpuinfo.h>
+#include <SDL3/SDL_gamepad.h>
+#include <SDL3/SDL_hints.h>
+#include <SDL3/SDL_init.h>
+#include <SDL3/SDL_main.h>
+
+#include <cstdlib>
+#include <optional>
+
+int main(int argc, char *argv[]) {
+#ifdef __APPLE__
+    qputenv("QT_MTL_NO_TRANSACTION", "1");
+    qputenv("QT_MAC_NO_CONTAINER_LAYER", "1");
+#endif
+
+    QCoreApplication::setOrganizationName(QStringLiteral("Vita3K"));
+    QCoreApplication::setApplicationName(QStringLiteral("Vita3K"));
+
+#ifdef TRACY_ENABLE
+    ZoneScoped; // Tracy - Track main function scope
+#endif
+
+    Root root_paths;
+    bool portable = app::init_paths(root_paths);
+
+    if (!fs::exists(root_paths.get_vita_fs_path())) {
+        fs::create_directories(root_paths.get_vita_fs_path());
+    }
+
+    LogWidget::register_callback();
+    if (logging::init(root_paths, true) != Success) {
+        return InitConfigFailed;
+    }
+
+    // Check admin privs before init starts to avoid creating of file as other user by accident
+    bool admin_priv = false;
+#ifdef _WIN32
+    // https://stackoverflow.com/questions/8046097/how-to-check-if-a-process-has-the-administrative-rights
+    HANDLE hToken = NULL;
+    if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken)) {
+        TOKEN_ELEVATION Elevation;
+        DWORD cbSize = sizeof(TOKEN_ELEVATION);
+        if (GetTokenInformation(hToken, TokenElevation, &Elevation, sizeof(Elevation), &cbSize)) {
+            admin_priv = Elevation.TokenIsElevated;
+        }
+    }
+    if (hToken) {
+        CloseHandle(hToken);
+    }
+#else
+    auto uid = getuid();
+    auto euid = geteuid();
+
+    // if either effective uid or uid is the one of the root user assume running as root.
+    // else if euid and uid are different then permissions errors can happen if its running
+    // as a completely different user than the uid/euid
+    if (uid == 0 || euid == 0 || uid != euid)
+        admin_priv = true;
+#endif
+
+    Config cfg{};
+    EmuEnvState emuenv;
+    const auto config_err = config::init_config(cfg, argc, argv, root_paths, portable);
+
+    if (config_err != Success) {
+        if (config_err == QuitRequested) {
+            if (cfg.recompile_shader_path.has_value()) {
+                LOG_INFO("Recompiling {}", *cfg.recompile_shader_path);
+                shader::convert_gxp_to_glsl_from_filepath(*cfg.recompile_shader_path);
+            }
+            if (cfg.decode_at9_path.has_value()) {
+                const std::string &tap_path = *cfg.decode_at9_path;
+                uint32_t config_data = 0;
+                std::smatch cfg_match;
+                if (std::regex_search(tap_path, cfg_match, std::regex("_c([0-9A-Fa-f]{8})")))
+                    config_data = static_cast<uint32_t>(std::stoul(cfg_match[1].str(), nullptr, 16));
+                std::ifstream tap_in(tap_path, std::ios::binary);
+                if (!tap_in || !config_data) {
+                    LOG_ERROR("decode-at9: cannot open {} or no _c<config> in the name", tap_path);
+                    return 1;
+                }
+                std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(tap_in)), std::istreambuf_iterator<char>());
+                Atrac9DecoderState decoder(config_data);
+                const uint32_t superframe_size = decoder.get(DecoderQuery::AT9_SUPERFRAME_SIZE);
+                const uint32_t frames_in_sf = decoder.get(DecoderQuery::AT9_FRAMES_IN_SUPERFRAME);
+                const uint32_t samples_per_frame = decoder.get(DecoderQuery::AT9_SAMPLE_PER_FRAME);
+                const uint32_t channels = decoder.get(DecoderQuery::CHANNELS);
+                LOG_INFO("decode-at9: {} bytes, config=0x{:08X} superframe={} frames={} samples/frame={} ch={}",
+                    bytes.size(), config_data, superframe_size, frames_in_sf, samples_per_frame, channels);
+                std::vector<uint8_t> pcm(static_cast<size_t>(samples_per_frame) * sizeof(int16_t) * channels);
+                std::string row;
+                uint32_t sf_index = 0, errors = 0, silent_run = 0, transitions = 0;
+                for (size_t off = 0; off + superframe_size <= bytes.size(); off += superframe_size, sf_index++) {
+                    const uint8_t *in = bytes.data() + off;
+                    float sf_peak = 0.0f;
+                    for (uint32_t f = 0; f < frames_in_sf; f++) {
+                        if (!decoder.send(in, 0)) {
+                            errors++;
+                            break;
+                        }
+                        DecoderSize dsz;
+                        decoder.receive(pcm.data(), &dsz);
+                        const int16_t *sp = reinterpret_cast<const int16_t *>(pcm.data());
+                        for (uint32_t k = 0; k < samples_per_frame * channels; k++)
+                            sf_peak = std::max(sf_peak, std::abs(sp[k]) / 32768.0f);
+                        in += decoder.get_es_size();
+                    }
+                    const bool silent = sf_peak <= 0.0001f;
+                    if (silent)
+                        silent_run++;
+                    else {
+                        if (silent_run >= 12) {
+                            LOG_INFO("decode-at9: silent run of {} superframes ended at sf#{}", silent_run, sf_index);
+                            transitions++;
+                        }
+                        silent_run = 0;
+                    }
+                    row += fmt::format(" {:.4f}", sf_peak);
+                    if ((sf_index % 16) == 15) {
+                        LOG_INFO("decode-at9: sf#{:6}:{}", sf_index - 15, row);
+                        row.clear();
+                    }
+                }
+                if (!row.empty())
+                    LOG_INFO("decode-at9: sf#{:6}:{}", (sf_index / 16) * 16, row);
+                LOG_INFO("decode-at9: DONE {} superframes, {} decode errors, final silent run {}, {} long-silence->audio transitions",
+                    sf_index, errors, silent_run, transitions);
+            }
+            if (cfg.delete_title_id.has_value()) {
+                LOG_INFO("Deleting title id {}", *cfg.delete_title_id);
+                fs::remove_all(cfg.get_vita_fs_path() / "ux0/app" / *cfg.delete_title_id);
+                fs::remove_all(cfg.get_vita_fs_path() / "ux0/addcont" / *cfg.delete_title_id);
+                fs::remove_all(cfg.get_vita_fs_path() / "ux0/user/00/savedata" / *cfg.delete_title_id);
+                fs::remove_all(root_paths.get_cache_path() / "shaders" / *cfg.delete_title_id);
+            }
+            if (cfg.pup_path.has_value()) {
+                fs::create_directories(cfg.get_vita_fs_path());
+                LOG_INFO("Installing firmware file {}", *cfg.pup_path);
+                install_pup(cfg.get_vita_fs_path(), *cfg.pup_path, [](uint32_t progress) {
+                    LOG_INFO("Firmware installation progress: {}%", progress);
+                });
+            }
+            if (cfg.pkg_path.has_value() && cfg.pkg_zrif.has_value()) {
+                fs::create_directories(cfg.get_vita_fs_path());
+                LOG_INFO("Installing pkg from {} ", *cfg.pkg_path);
+                emuenv.cache_path = root_paths.get_cache_path().generic_path();
+                emuenv.vita_fs_path = cfg.get_vita_fs_path();
+                auto pkg_path = fs_utils::utf8_to_path(*cfg.pkg_path);
+                install_pkg(pkg_path, emuenv, *cfg.pkg_zrif, [](float) {});
+            }
+            return Success;
+        }
+        LOG_ERROR("Failed to initialise config");
+        return InitConfigFailed;
+    }
+
+    fs::create_directories(cfg.get_vita_fs_path());
+
+    // The SDL frontend runs without Qt, so it needs no display server
+    std::optional<QApplication> qt_app;
+    if (cfg.frontend == Frontend::qt) {
+        qt_app.emplace(argc, argv);
+        gui::i18n::apply_ui_language(*qt_app, cfg.user_lang, emuenv.static_assets_path);
+    }
+
+#ifdef _WIN32
+    {
+        auto res = CoInitializeEx(NULL, COINIT_MULTITHREADED);
+        LOG_ERROR_IF(res == S_FALSE, "Failed to initialize COM Library");
+    }
+#endif
+
+    if (cfg.console) {
+        if (logging::init(root_paths, false) != Success)
+            return InitConfigFailed;
+    } else {
+        // Joystick events on background thread
+        SDL_SetHint(SDL_HINT_JOYSTICK_THREAD, "1");
+        // Enable HIDAPI rumble for DS4/DS
+        SDL_SetHint(SDL_HINT_JOYSTICK_ENHANCED_REPORTS, "1");
+        // Enable Switch controller
+        SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_SWITCH, "1");
+        SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_JOY_CONS, "1");
+
+        // The SDL frontend initializes SDL for each session itself
+        if (qt_app) {
+            std::atexit(SDL_Quit);
+            if (!SDL_Init(SDL_INIT_AUDIO | SDL_INIT_GAMEPAD | SDL_INIT_HAPTIC | SDL_INIT_SENSOR)) {
+                LOG_ERROR("SDL initialisation failed: {}", SDL_GetError());
+                QMessageBox::critical(nullptr, "Error", "SDL initialisation failed.");
+                return SDLInitFailed;
+            }
+            if (!SDL_InitSubSystem(SDL_INIT_CAMERA))
+                LOG_WARN("SDL camera initialisation failed, continuing without it: {}", SDL_GetError());
+        }
+    }
+
+    LOG_INFO("{}", window_title);
+    LOG_INFO("OS: {}", QSysInfo::prettyProductName().toStdString());
+    LOG_INFO("CPU: {}", util::get_system_info());
+    LOG_INFO("Available ram memory: {} MiB", SDL_GetSystemRAM());
+
+    app::AppRunType run_type = app::AppRunType::Unknown;
+    if (cfg.run_app_path)
+        run_type = app::AppRunType::Extracted;
+
+    if (!app::init(emuenv, cfg, root_paths)) {
+        LOG_ERROR("Emulated environment initialization failed.");
+        if (qt_app)
+            QMessageBox::critical(nullptr, "Error", "Emulated environment initialization failed.");
+        return 1;
+    }
+
+    init_libraries(emuenv);
+
+    if (!app::init_apps_list(emuenv)) {
+        LOG_ERROR("Failed to initialize apps list.");
+        return 1;
+    }
+
+    app::load_users(emuenv);
+
+    if (emuenv.cfg.content_path.has_value()) {
+        const auto extension = string_utils::tolower(emuenv.cfg.content_path->extension().string());
+        const auto is_archive = (extension == ".vpk") || (extension == ".zip");
+        const auto is_rif = (extension == ".rif") || (emuenv.cfg.content_path->filename() == "work.bin");
+        const auto is_directory = fs::is_directory(*emuenv.cfg.content_path);
+
+        std::string boot_title_id;
+
+        if (is_archive) {
+            LOG_INFO("Installing archive from CLI: {}", emuenv.cfg.content_path->string());
+            std::vector<ContentInfo> contents_info = install_archive(emuenv, *emuenv.cfg.content_path);
+            const auto content_index = std::find_if(contents_info.begin(), contents_info.end(), [](const ContentInfo &c) {
+                return c.category == "gd";
+            });
+            if (content_index != contents_info.end() && content_index->state)
+                boot_title_id = content_index->title_id;
+        } else if (is_directory) {
+            LOG_INFO("Installing contents from CLI: {}", emuenv.cfg.content_path->string());
+            if (install_contents(emuenv, *emuenv.cfg.content_path) == 1 && emuenv.app_info.app_category == "gd")
+                boot_title_id = emuenv.app_info.app_title_id;
+        } else if (is_rif) {
+            LOG_INFO("Installing license from CLI: {}", emuenv.cfg.content_path->string());
+            copy_license(emuenv, *emuenv.cfg.content_path);
+        } else {
+            LOG_ERROR("File: [{}] is not a supported content type.", emuenv.cfg.content_path->string());
+        }
+
+        emuenv.cfg.content_path.reset();
+
+        if (!boot_title_id.empty()) {
+            emuenv.cfg.run_app_path = boot_title_id;
+            LOG_INFO("Content installed, will auto-boot: {}", boot_title_id);
+        }
+
+        if (!app::init_apps_list(emuenv)) {
+            LOG_ERROR("Failed to refresh apps list after content install.");
+        }
+    }
+
+    if (emuenv.cfg.frontend == Frontend::sdl) {
+        if (!emuenv.cfg.run_app_path) {
+            LOG_ERROR("The SDL frontend needs an installed app to run, given with -r");
+            return 1;
+        }
+        app::AppSessionController session(emuenv);
+        const int exit_code = sdl_frontend::run(emuenv, session, AppLaunchRequest{ .app_path = *emuenv.cfg.run_app_path });
+#ifdef _WIN32
+        CoUninitialize();
+#endif
+        return exit_code;
+    }
+
+    const QString gui_configs_dir = gui::utils::to_qt_path(emuenv.config_path / "gui-configs");
+    auto gui_settings = std::make_shared<GuiSettings>(gui_configs_dir, emuenv.static_assets_path / "data" / "gui-configs" / "custom-themes");
+    auto persistent_settings = std::make_shared<PersistentSettings>(gui_configs_dir);
+
+    MainWindow mainwindow(emuenv, gui_settings, persistent_settings, admin_priv);
+
+    mainwindow.show();
+    if (mainwindow.prompt_startup_warnings())
+        qt_app->exec();
+
+#ifdef _WIN32
+    CoUninitialize();
+#endif
+
+    return Success;
+}

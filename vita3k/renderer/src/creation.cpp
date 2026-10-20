@@ -1,0 +1,474 @@
+// Vita3K emulator project
+// Copyright (C) 2026 Vita3K team
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; either version 2 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program; if not, write to the Free Software Foundation, Inc.,
+// 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+
+#include <atomic>
+
+#include <gxm/types.h>
+#include <renderer/commands.h>
+#include <renderer/driver_functions.h>
+#include <renderer/state.h>
+#include <renderer/types.h>
+
+#include <renderer/gl/functions.h>
+#include <renderer/gl/state.h>
+#include <renderer/vulkan/functions.h>
+#include <renderer/vulkan/state.h>
+
+#include <gxm/functions.h>
+#include <kernel/state.h>
+#include <renderer/functions.h>
+#include <util/align.h>
+
+#include <chrono>
+#include <future>
+#include <util/log.h>
+#include <util/tracy.h>
+
+namespace renderer {
+
+static void layout_ssbo_offset_from_uniform_buffer_sizes(UniformBufferSizes &sizes, UniformBufferSizes &offsets, std::size_t &total_hold) {
+    std::uint32_t last_offset = 0;
+
+    for (std::size_t i = 0; i < sizes.size(); i++) {
+        if (sizes[i] != 0) {
+            // Round to vec4 unit
+            offsets[i] = last_offset;
+            last_offset += align(sizes[i], 4);
+        } else {
+            offsets[i] = static_cast<std::uint32_t>(-1);
+        }
+    }
+
+    total_hold = static_cast<std::size_t>(last_offset);
+}
+
+COMMAND(handle_create_context) {
+    TRACY_FUNC_COMMANDS(handle_create_context);
+    std::unique_ptr<Context> *ctx = helper.pop<std::unique_ptr<Context> *>();
+    bool result = false;
+
+    switch (renderer.current_backend) {
+    case Backend::OpenGL: {
+        result = gl::create(*ctx);
+        break;
+    }
+
+    case Backend::Vulkan: {
+        result = vulkan::create(dynamic_cast<vulkan::VKState &>(renderer), *ctx, mem);
+        break;
+    }
+
+    default: {
+        REPORT_MISSING(renderer.current_backend);
+        break;
+    }
+    }
+
+    renderer.context = ctx->get();
+    renderer.live_contexts.push_back(ctx->get());
+
+    // fill with default values
+    renderer.context->shader_hints = {
+        .attributes = nullptr,
+        .color_format = SCE_GXM_COLOR_FORMAT_U8U8U8U8_ABGR
+    };
+    std::fill_n(renderer.context->shader_hints.vertex_textures, SCE_GXM_MAX_TEXTURE_UNITS, SCE_GXM_TEXTURE_FORMAT_U8U8U8U8_ABGR);
+    std::fill_n(renderer.context->shader_hints.fragment_textures, SCE_GXM_MAX_TEXTURE_UNITS, SCE_GXM_TEXTURE_FORMAT_U8U8U8U8_ABGR);
+
+    complete_command(renderer, helper, result);
+}
+
+COMMAND(handle_destroy_context) {
+    TRACY_FUNC_COMMANDS(handle_destroy_context);
+    std::unique_ptr<Context> *ctx = helper.pop<std::unique_ptr<Context> *>();
+
+    std::erase(renderer.live_contexts, ctx->get());
+    if (renderer.context == ctx->get())
+        renderer.context = renderer.live_contexts.empty() ? nullptr : renderer.live_contexts.back();
+    ctx->reset();
+
+    complete_command(renderer, helper, 0);
+}
+
+COMMAND(handle_create_render_target) {
+    TRACY_FUNC_COMMANDS(handle_create_render_target);
+    std::unique_ptr<RenderTarget> *render_target = helper.pop<std::unique_ptr<RenderTarget> *>();
+    SceGxmRenderTargetParams *params = helper.pop<SceGxmRenderTargetParams *>();
+
+    bool result = false;
+
+    switch (renderer.current_backend) {
+    case Backend::OpenGL:
+        result = gl::create(dynamic_cast<gl::GLState &>(renderer), *render_target, *params, features);
+        break;
+
+    case Backend::Vulkan:
+        result = vulkan::create(dynamic_cast<vulkan::VKState &>(renderer), *render_target, *params, features);
+        break;
+
+    default:
+        REPORT_MISSING(renderer.current_backend);
+        break;
+    }
+    (*render_target)->multisample_mode = params->multisampleMode;
+    (*render_target)->has_macroblock_sync = (params->flags & SCE_GXM_RENDER_TARGET_MACROTILE_SYNC);
+    if ((*render_target)->has_macroblock_sync) {
+        // there are between 1 and 4 macroblocks in the x and y direction
+        uint16_t nb_macroblocks_x = (params->flags >> 8) & 0b111;
+        uint16_t nb_macroblocks_y = (params->flags >> 12) & 0b111;
+
+        // the width and height should be multiple of 128
+        (*render_target)->macroblock_width = static_cast<uint16_t>((params->width / nb_macroblocks_x) * renderer.res_multiplier);
+        (*render_target)->macroblock_height = static_cast<uint16_t>((params->height / nb_macroblocks_y) * renderer.res_multiplier);
+    }
+
+    complete_command(renderer, helper, result);
+}
+
+COMMAND(handle_destroy_render_target) {
+    TRACY_FUNC_COMMANDS(handle_destroy_render_target);
+    std::unique_ptr<RenderTarget> *render_target = helper.pop<std::unique_ptr<RenderTarget> *>();
+
+    switch (renderer.current_backend) {
+    case Backend::OpenGL:
+        break;
+
+    case Backend::Vulkan:
+        vulkan::destroy(dynamic_cast<vulkan::VKState &>(renderer), *render_target);
+        break;
+
+    default:
+        REPORT_MISSING(renderer.current_backend);
+        break;
+    }
+
+    render_target->reset();
+
+    complete_command(renderer, helper, 0);
+}
+
+inline constexpr bool enable_world_stop_for_transitions = true;
+
+struct WorldStopScope {
+    KernelState *kernel = nullptr;
+    MemState *mem_state = nullptr;
+    WorldStopScope(renderer::State &renderer, MemState &mem, SceUID except_thread, Address addr, uint32_t size) {
+        if (!enable_world_stop_for_transitions || !mem.use_page_table || !renderer.kernel)
+            return;
+        kernel = renderer.kernel;
+        mem_state = &mem;
+        const auto start = std::chrono::steady_clock::now();
+        const int not_parked = kernel->stop_world(except_thread, std::chrono::milliseconds(50));
+        const auto took_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+        mem.transition_not_parked = not_parked;
+        static uint64_t clean_stops = 0;
+        const bool interesting = not_parked > 0 || took_ms >= 10;
+        if (interesting || ((++clean_stops) & 63) == 1)
+            LOG_INFO("memory transition 0x{:X} size 0x{:X}: world stopped in {} ms, {} thread(s) not parked", addr, size, took_ms, not_parked);
+    }
+    ~WorldStopScope() {
+        if (kernel) {
+            mem_state->transition_not_parked = -1;
+            kernel->resume_world();
+            LOG_DEBUG("memory transition: world resumed");
+        }
+    }
+};
+
+inline constexpr bool DORMANT_MAPPINGS = true;
+inline constexpr uint64_t DORMANT_BUDGET_BYTES = 128ull * 1024 * 1024;
+static std::atomic<uint32_t> g_dormant_count{ 0 };
+
+inline constexpr bool DORMANT_WAIT_PENDING_GPU_USE = true;
+
+static void wait_for_pending_gpu_use(renderer::State &renderer, vulkan::VKState &vk, Address address) {
+    auto ite = vk.mapped_memories.find(address);
+    if (ite == vk.mapped_memories.end())
+        return;
+    const uint64_t last_use = ite->second.last_gpu_use;
+    if (last_use == 0 || last_use <= vk.completed_serial.load(std::memory_order_acquire))
+        return;
+    // work still being recorded has no fence yet, the queued fences are all this can cover
+    renderer.in_dormant_wait.store(true, std::memory_order_relaxed);
+    if (DORMANT_WAIT_PENDING_GPU_USE) {
+        auto promise = std::make_shared<std::promise<void>>();
+        std::future<void> future = promise->get_future();
+        vk.request_queue.push(vulkan::CallbackRequest{
+            new vulkan::CallbackRequestFunction([promise]() { promise->set_value(); }), /* wait_for_gpu = */ true });
+        while (future.wait_for(std::chrono::milliseconds(5)) != std::future_status::ready) {
+            if (renderer.render_abort.load(std::memory_order_relaxed) || vk.request_queue.is_aborted())
+                break;
+        }
+    }
+    renderer.in_dormant_wait.store(false, std::memory_order_relaxed);
+}
+
+bool has_dormant_mappings() {
+    return g_dormant_count.load(std::memory_order_acquire) != 0;
+}
+
+static void note_memory_transition(renderer::State &renderer, const char *kind, Address addr, uint32_t size) {
+    renderer.last_mem_transition_epoch_ms.store(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count(), std::memory_order_relaxed);
+    static uint64_t transitions = 0;
+    if (((++transitions) & 1023) == 1)
+        LOG_INFO("[MEMTRANS] transition #{}: {} 0x{:X} size 0x{:X}", transitions, kind, addr, size);
+}
+
+static void teardown_dormant(renderer::State &renderer, MemState &mem, SceUID caller_thread, Address addr, const char *why) {
+    auto &vk = dynamic_cast<vulkan::VKState &>(renderer);
+    static uint64_t teardowns = 0;
+    if (((++teardowns) & 63) == 1)
+        LOG_INFO("[DORMANT] teardown #{} of 0x{:X} ({}); {} still dormant, {} MiB", teardowns, addr, why, vk.dormant_mappings.size(), vk.dormant_bytes / (1024 * 1024));
+    const WorldStopScope world_stop(renderer, mem, caller_thread, addr, 0);
+    vk.teardown_dormant(mem, addr);
+    g_dormant_count.store(static_cast<uint32_t>(vk.dormant_mappings.size()), std::memory_order_release);
+}
+
+static void evict_dormant_to_budget(renderer::State &renderer, MemState &mem, SceUID caller_thread, uint64_t budget, const char *why) {
+    auto &vk = dynamic_cast<vulkan::VKState &>(renderer);
+    while (vk.dormant_bytes > budget && !vk.dormant_mappings.empty()) {
+        const Address victim = vk.oldest_dormant();
+        if (!victim)
+            break;
+        teardown_dormant(renderer, mem, caller_thread, victim, why);
+    }
+}
+
+// memory pressure reported since the last transition: drop everything dormant first
+static void honour_dormant_trim(renderer::State &renderer, MemState &mem, SceUID caller_thread) {
+    auto &vk = dynamic_cast<vulkan::VKState &>(renderer);
+    if (!vk.dormant_trim_requested)
+        return;
+    vk.dormant_trim_requested = false;
+    evict_dormant_to_budget(renderer, mem, caller_thread, 0, "memory trim");
+}
+
+COMMAND(handle_memory_map) {
+    TRACY_FUNC_COMMANDS(handle_memory_map);
+    const Ptr<void> addr = helper.pop<Ptr<void>>();
+    const uint32_t size = helper.pop<uint32_t>();
+    const SceUID caller_thread = static_cast<SceUID>(helper.pop<uint32_t>());
+
+    note_memory_transition(renderer, "map", addr.address(), size);
+
+    if (DORMANT_MAPPINGS && renderer.current_backend == Backend::Vulkan) {
+        auto &vk = dynamic_cast<vulkan::VKState &>(renderer);
+        honour_dormant_trim(renderer, mem, caller_thread);
+        // identical remap of a dormant range: everything is still in place, just make it live again
+        if (vk.promote_dormant(addr.address(), size)) {
+            g_dormant_count.store(static_cast<uint32_t>(vk.dormant_mappings.size()), std::memory_order_release);
+            static uint64_t promoted = 0;
+            if (((++promoted) & 1023) == 1)
+                LOG_INFO("[DORMANT] identical remap of 0x{:X} size 0x{:X} promoted without copying ({} so far)", addr.address(), size, promoted);
+            complete_command(renderer, helper, 0);
+            return;
+        }
+        // a dormant range this mapping would overlap (different base or size) must really go first, so
+        // its data is back in the arena before the new mapping copies from there
+        for (const Address overlap : vk.dormant_overlapping(addr.address(), addr.address() + size))
+            teardown_dormant(renderer, mem, caller_thread, overlap, "overlapping map");
+    }
+
+    {
+        const WorldStopScope world_stop(renderer, mem, caller_thread, addr.address(), size);
+
+        if (renderer.current_backend == Backend::Vulkan) {
+            dynamic_cast<vulkan::VKState &>(renderer).map_memory(mem, addr, size);
+        }
+    }
+
+    complete_command(renderer, helper, 0);
+}
+
+COMMAND(handle_memory_unmap) {
+    TRACY_FUNC_COMMANDS(handle_memory_unmap);
+
+    const Ptr<void> addr = helper.pop<Ptr<void>>();
+    const SceUID caller_thread = static_cast<SceUID>(helper.pop<uint32_t>());
+
+    note_memory_transition(renderer, "unmap", addr.address(), 0);
+
+    if (DORMANT_MAPPINGS && renderer.current_backend == Backend::Vulkan) {
+        auto &vk = dynamic_cast<vulkan::VKState &>(renderer);
+        honour_dormant_trim(renderer, mem, caller_thread);
+        if (vk.dormant_mappings.contains(addr.address())) {
+            LOG_WARN_ONCE("unmap of an already-dormant range 0x{:X} ignored", addr.address());
+            complete_command(renderer, helper, 0);
+            return;
+        }
+        // a live mapping goes dormant so no copy, no world-stop, no waitIdle (the GPU must be done reading it first)
+        wait_for_pending_gpu_use(renderer, vk, addr.address());
+        if (vk.make_dormant(addr.address())) {
+            g_dormant_count.store(static_cast<uint32_t>(vk.dormant_mappings.size()), std::memory_order_release);
+            evict_dormant_to_budget(renderer, mem, caller_thread, DORMANT_BUDGET_BYTES, "budget");
+            complete_command(renderer, helper, 0);
+            return;
+        }
+        // not a live mapping so fall through to the ordinary unmap, which reports it
+    }
+
+    {
+        const WorldStopScope world_stop(renderer, mem, caller_thread, addr.address(), 0);
+
+        if (renderer.current_backend == Backend::Vulkan) {
+            dynamic_cast<vulkan::VKState &>(renderer).unmap_memory(mem, addr);
+        }
+    }
+
+    complete_command(renderer, helper, 0);
+}
+
+COMMAND(handle_memory_unmap_flush) {
+    TRACY_FUNC_COMMANDS(handle_memory_unmap_flush);
+    const SceUID caller_thread = static_cast<SceUID>(helper.pop<uint32_t>());
+    if (DORMANT_MAPPINGS && renderer.current_backend == Backend::Vulkan) {
+        auto &vk = dynamic_cast<vulkan::VKState &>(renderer);
+        while (!vk.dormant_mappings.empty())
+            teardown_dormant(renderer, mem, caller_thread, vk.dormant_mappings.begin()->first, "guest free");
+    }
+    complete_command(renderer, helper, 0);
+}
+
+// Client
+bool create(std::unique_ptr<FragmentProgram> &fp, State &state, const SceGxmProgram &program, const SceGxmBlendInfo *blend, GXPPtrMap &gxp_ptr_map, SceGxmOutputRegisterFormat output_format, SceGxmMultisampleMode multisample_mode) {
+    switch (state.current_backend) {
+    case Backend::OpenGL:
+        gl::create(fp, dynamic_cast<gl::GLState &>(state), program, blend);
+        break;
+
+    case Backend::Vulkan:
+        vulkan::create(fp, dynamic_cast<vulkan::VKState &>(state), program, blend);
+        break;
+
+    default:
+        REPORT_MISSING(state.current_backend);
+        return false;
+    }
+
+    fp->output_register_format = output_format;
+    fp->multisample_mode = multisample_mode;
+    fp->color_write_mask = 0xF;
+    if (blend) {
+        fp->color_write_mask = ((blend->colorMask & SCE_GXM_COLOR_MASK_R) ? 1 : 0) | ((blend->colorMask & SCE_GXM_COLOR_MASK_G) ? 2 : 0)
+            | ((blend->colorMask & SCE_GXM_COLOR_MASK_B) ? 4 : 0) | ((blend->colorMask & SCE_GXM_COLOR_MASK_A) ? 8 : 0);
+    }
+
+    // Try to hash this shader
+    fp->hash = sha256(&program, program.size);
+    gxp_ptr_map.emplace(fp->hash, &program);
+
+    fp->buffer_count = shader::usse::get_uniform_buffer_sizes(program, fp->uniform_buffer_sizes);
+    layout_ssbo_offset_from_uniform_buffer_sizes(fp->uniform_buffer_sizes, fp->uniform_buffer_data_offsets, fp->max_total_uniform_buffer_storage);
+    fp->dynamic_uniform_buffers = shader::usse::get_dynamic_uniform_buffers(program);
+    fp->textures_used = gxp::get_textures_used(program);
+    fp->texture_count = std::bit_width(fp->textures_used.to_ulong());
+
+    return true;
+}
+
+void warm_pipeline(State &state, const std::shared_ptr<ProgramBinding> &vertex, const std::shared_ptr<ProgramBinding> &fragment) {
+    if (state.current_backend == Backend::Vulkan)
+        dynamic_cast<vulkan::VKState &>(state).pipeline_cache.warm_program_pair(vertex, fragment);
+}
+
+bool create(std::unique_ptr<VertexProgram> &vp, State &state, const SceGxmProgram &program, GXPPtrMap &gxp_ptr_map, const std::vector<SceGxmVertexAttribute> &attributes) {
+    switch (state.current_backend) {
+    case Backend::OpenGL:
+        gl::create(vp, dynamic_cast<gl::GLState &>(state), program);
+        break;
+
+    case Backend::Vulkan:
+        vulkan::create(vp, dynamic_cast<vulkan::VKState &>(state), program);
+        break;
+
+    default:
+        REPORT_MISSING(state.current_backend);
+        return false;
+    }
+
+    // Hash this shader
+    vp->hash = sha256(&program, program.size);
+    gxp_ptr_map.emplace(vp->hash, &program);
+
+    vp->buffer_count = shader::usse::get_uniform_buffer_sizes(program, vp->uniform_buffer_sizes);
+    shader::usse::get_attribute_informations(program, vp->attribute_infos);
+    layout_ssbo_offset_from_uniform_buffer_sizes(vp->uniform_buffer_sizes, vp->uniform_buffer_data_offsets, vp->max_total_uniform_buffer_storage);
+    vp->dynamic_uniform_buffers = shader::usse::get_dynamic_uniform_buffers(program);
+    vp->textures_used = gxp::get_textures_used(program);
+    vp->texture_count = std::bit_width(vp->textures_used.to_ulong());
+
+    if (vp->attribute_infos.empty()) {
+        // Insert some symbols here
+        if (program.primary_reg_count != 0) {
+            for (size_t i = 0; i < attributes.size(); i++) {
+                vp->attribute_infos.emplace(attributes[i].regIndex, shader::usse::AttributeInformation(static_cast<uint16_t>(i), SCE_GXM_PARAMETER_TYPE_F32, 1, false, false, false));
+            }
+        }
+    }
+
+    return true;
+}
+
+void create(SceGxmSyncObject *sync, State &state) {
+    // Set as if the last display was already done
+    sync->last_display = 0;
+    sync->timestamp_current = 0;
+    sync->timestamp_ahead = 0;
+    sync->being_deleted = false;
+}
+
+void destroy(SceGxmSyncObject *sync, State &state, std::function<void()> dealloc) {
+    if (dealloc && state.current_backend == Backend::Vulkan && state.features.enable_memory_mapping) {
+        auto *vk_state = static_cast<vulkan::VKState *>(&state);
+        vk_state->request_queue.push(vulkan::CallbackRequest{
+            new vulkan::CallbackRequestFunction(std::move(dealloc)) });
+    } else if (dealloc) {
+        dealloc();
+    }
+}
+
+bool init(FrameHost &frame, std::unique_ptr<State> &state, Backend backend, const Config &config, const Root &root_paths) {
+    switch (backend) {
+    case Backend::OpenGL:
+        state = std::make_unique<gl::GLState>();
+        state->frame = &frame;
+        state->init_paths(root_paths);
+        if (!gl::create(state, config))
+            return false;
+        break;
+
+    case Backend::Vulkan:
+        state = std::make_unique<vulkan::VKState>(config.current_config.gpu_idx);
+        state->frame = &frame;
+        state->init_paths(root_paths);
+        if (!vulkan::create(state, config))
+            return false;
+        break;
+
+    default:
+        LOG_ERROR("Cannot create a renderer with unsupported backend {}.", static_cast<int>(backend));
+        return false;
+    }
+
+    state->current_backend = backend;
+
+    // Can change this
+    state->command_buffer_queue.maxPendingCount_ = 30;
+
+    return true;
+}
+} // namespace renderer

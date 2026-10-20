@@ -1,0 +1,315 @@
+// Vita3K emulator project
+// Copyright (C) 2026 Vita3K team
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; either version 2 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program; if not, write to the Free Software Foundation, Inc.,
+// 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+
+#include <atomic>
+#include <chrono>
+#include <exception>
+#include <typeinfo>
+#include <util/fork_build.h>
+#include <util/log.h>
+
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <Windows.h>
+#endif
+
+#include <spdlog/async.h>
+#include <spdlog/sinks/basic_file_sink.h>
+#include <spdlog/sinks/dup_filter_sink.h>
+#include <spdlog/sinks/msvc_sink.h>
+#ifdef __ANDROID__
+#include <spdlog/sinks/android_sink.h>
+#else
+#include <spdlog/sinks/stdout_color_sinks.h>
+#endif
+
+#include <functional>
+#include <iostream>
+#include <mutex>
+#include <vector>
+
+namespace logging {
+
+static const fs::path &LOG_FILE_NAME = "vita3k.log";
+static const char *LOG_PATTERN = "%^[%H:%M:%S.%e] |%L| [%!]: %v%$";
+static constexpr size_t ASYNC_LOG_QUEUE_SIZE = 65536;
+static std::vector<spdlog::sink_ptr> sinks;
+static std::once_flag s_async_logging_once;
+#ifdef __ANDROID__
+static std::shared_ptr<spdlog::sinks::android_sink_mt> s_logcat_sink;
+#endif
+
+static std::function<void(std::string, int)> s_log_callback;
+static std::mutex s_log_callback_mutex;
+
+static void register_log_exception_handler();
+static void rebuild_default_logger();
+
+void flush() {
+    spdlog::details::registry::instance().flush_all();
+}
+
+template <typename Mutex>
+class callback_sink final : public spdlog::sinks::base_sink<Mutex> {
+protected:
+    void sink_it_(const spdlog::details::log_msg &msg) override {
+        std::function<void(std::string, int)> callback;
+        {
+            const std::lock_guard<std::mutex> lock(s_log_callback_mutex);
+            callback = s_log_callback;
+        }
+
+        if (!callback)
+            return;
+
+        spdlog::memory_buf_t formatted;
+        spdlog::sinks::base_sink<Mutex>::formatter_->format(msg, formatted);
+        callback(fmt::to_string(formatted), static_cast<int>(msg.level));
+    }
+
+    void flush_() override {};
+};
+
+using callback_sink_mt = callback_sink<std::mutex>;
+
+void set_log_callback(std::function<void(std::string, int)> cb) {
+    const std::lock_guard<std::mutex> lock(s_log_callback_mutex);
+    s_log_callback = std::move(cb);
+}
+
+#ifdef __ANDROID__
+// flushing every line and copying it to logcat only pay for themselves at debug or trace level
+static void apply_android_log_policy(const spdlog::level::level_enum log_level) {
+    const bool verbose = log_level <= spdlog::level::debug;
+    spdlog::flush_on(verbose ? spdlog::level::trace : spdlog::level::err);
+    if (s_logcat_sink)
+        s_logcat_sink->set_level(verbose ? spdlog::level::trace : spdlog::level::off);
+}
+#endif
+
+ExitCode init(const Root &root_paths, bool use_stdout) {
+    sinks.clear();
+#ifdef __ANDROID__
+    s_logcat_sink = use_stdout ? std::make_shared<spdlog::sinks::android_sink_mt>("Vita3K") : nullptr;
+    if (s_logcat_sink)
+        sinks.push_back(s_logcat_sink);
+#else
+    if (use_stdout)
+        sinks.push_back(std::make_shared<spdlog::sinks::stdout_color_sink_mt>());
+#endif
+
+#ifndef __ANDROID__
+    sinks.push_back(std::make_shared<callback_sink_mt>());
+#endif
+
+    constexpr bool RELEASE_VERSION = true; // Nick
+
+    if (add_sink(root_paths.get_log_path() / LOG_FILE_NAME) != Success)
+        return InitConfigFailed;
+    LOG_INFO("================= Vita3K session start =================");
+    LOG_INFO("FORK BUILD seq {} compiled {} {} | {}", FORK_BUILD_SEQ, __DATE__, __TIME__, RELEASE_VERSION ? "Release Version" : FORK_BUILD_CHANGES);
+
+    std::set_terminate([]() {
+        if (const std::exception_ptr eptr = std::current_exception()) {
+            try {
+                std::rethrow_exception(eptr);
+            } catch (const std::exception &ex) {
+                LOG_CRITICAL("[CRASH] std::terminate: uncaught exception {}: {}", typeid(ex).name(), ex.what());
+            } catch (...) {
+                LOG_CRITICAL("[CRASH] std::terminate: uncaught non-std exception");
+            }
+        } else {
+            LOG_CRITICAL("[CRASH] std::terminate called with no active exception");
+        }
+        spdlog::default_logger()->flush();
+        std::abort();
+    });
+
+    spdlog::set_error_handler([](const std::string &msg) {
+        std::cerr << "spdlog error: " << msg << std::endl;
+        assert(0);
+    });
+
+#ifdef _WIN32
+    // set console codepage to UTF-8
+    SetConsoleOutputCP(65001);
+    SetConsoleTitle("Vita3K PSVita Emulator");
+#endif
+
+#ifdef __ANDROID__
+    // the app is usually killed rather than exited, so buffered lines go out every second; set_level picks the per-line policy
+    spdlog::flush_every(std::chrono::seconds(1));
+    apply_android_log_policy(spdlog::level::trace);
+#endif
+
+    register_log_exception_handler();
+
+    static std::terminate_handler old_terminate = nullptr;
+    old_terminate = std::set_terminate([]() {
+        try {
+            auto eptr = std::current_exception();
+            if (eptr) {
+                std::rethrow_exception(eptr);
+            } else {
+                LOG_CRITICAL("Unhandled 'std::terminate()' call");
+            }
+        } catch (const std::exception &e) {
+            LOG_CRITICAL("Unhandled C++ exception. {}", e.what());
+        } catch (...) {
+            LOG_CRITICAL("Unhandled C++ exception. UNKNOWN");
+        }
+        flush();
+        if (old_terminate)
+            old_terminate();
+    });
+    return Success;
+}
+
+void set_level(spdlog::level::level_enum log_level) {
+    spdlog::set_level(log_level);
+#ifdef __ANDROID__
+    apply_android_log_policy(log_level);
+#endif
+}
+
+ExitCode add_sink(const fs::path &log_path) {
+    try {
+        // One log file that appends across launches so the start of a session (GPU/driver init, etc is never lost by a relaunch
+        constexpr uintmax_t LOG_SIZE_CAP = 30ull * 1024 * 1024;
+        bool truncate = true;
+        if (fs::exists(log_path))
+            truncate = fs::file_size(log_path) > LOG_SIZE_CAP; // append while under the cap
+        sinks.push_back(std::make_shared<spdlog::sinks::basic_file_sink_mt>(log_path.generic_path().native(), truncate));
+    } catch (const spdlog::spdlog_ex &ex) {
+        std::cerr << "File log initialization failed: " << ex.what() << std::endl;
+        return InitConfigFailed;
+    }
+
+#ifdef _MSC_VER
+    sinks.push_back(std::make_shared<spdlog::sinks::msvc_sink_mt>());
+#endif
+
+    rebuild_default_logger();
+    return Success;
+}
+
+void rebuild_default_logger() {
+    std::call_once(s_async_logging_once, []() {
+        spdlog::init_thread_pool(ASYNC_LOG_QUEUE_SIZE, 1);
+    });
+
+    auto duplicate_filter = std::make_shared<spdlog::sinks::dup_filter_sink_mt>(std::chrono::seconds(2));
+    for (const auto &sink : sinks)
+        duplicate_filter->add_sink(sink);
+
+    auto logger = std::make_shared<spdlog::async_logger>(
+        "vita3k logger",
+        duplicate_filter,
+        spdlog::thread_pool(),
+        spdlog::async_overflow_policy::overrun_oldest);
+    spdlog::set_default_logger(std::move(logger));
+    spdlog::set_pattern(LOG_PATTERN);
+}
+
+// log exceptions and flush log file on exceptions
+#ifdef _WIN32
+static LONG WINAPI exception_handler(PEXCEPTION_POINTERS pExp) noexcept {
+    const unsigned ec = pExp->ExceptionRecord->ExceptionCode;
+
+    static std::atomic<int64_t> window_start_ms{ 0 };
+    static std::atomic<uint32_t> in_window{ 0 };
+    static std::atomic<uint64_t> suppressed{ 0 };
+    constexpr uint32_t MAX_PER_WINDOW = 32;
+    constexpr int64_t WINDOW_MS = 5000;
+
+    const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch())
+                               .count();
+    int64_t started = window_start_ms.load(std::memory_order_relaxed);
+    if (now_ms - started >= WINDOW_MS
+        && window_start_ms.compare_exchange_strong(started, now_ms, std::memory_order_relaxed)) {
+        const uint64_t dropped = suppressed.exchange(0, std::memory_order_relaxed);
+        in_window.store(0, std::memory_order_relaxed);
+        if (dropped)
+            LOG_CRITICAL("Suppressed {} further exception report(s) in the previous 5s window", dropped);
+    }
+    const uint32_t seen = in_window.fetch_add(1, std::memory_order_relaxed);
+    if (seen >= MAX_PER_WINDOW) {
+        suppressed.fetch_add(1, std::memory_order_relaxed);
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+    const bool should_flush = seen < 4;
+
+    switch (ec) {
+    case EXCEPTION_ACCESS_VIOLATION:
+        LOG_CRITICAL("Exception EXCEPTION_ACCESS_VIOLATION ({}). ", log_hex(ec));
+        switch (pExp->ExceptionRecord->ExceptionInformation[0]) {
+        case 0:
+            LOG_CRITICAL("Read violation at address {}.", log_hex(pExp->ExceptionRecord->ExceptionInformation[1]));
+            break;
+        case 1:
+            LOG_CRITICAL("Write violation at address {}.", log_hex(pExp->ExceptionRecord->ExceptionInformation[1]));
+            break;
+        case 8:
+            LOG_CRITICAL("DEP violation at address {}.", log_hex(pExp->ExceptionRecord->ExceptionInformation[1]));
+            break;
+        default:
+            break;
+        }
+        break;
+    case EXCEPTION_ARRAY_BOUNDS_EXCEEDED:
+        LOG_CRITICAL("Exception EXCEPTION_ARRAY_BOUNDS_EXCEEDED ({}). ", log_hex(ec));
+        break;
+    case EXCEPTION_DATATYPE_MISALIGNMENT:
+        LOG_CRITICAL("Exception EXCEPTION_DATATYPE_MISALIGNMENT ({}). ", log_hex(ec));
+        break;
+    case EXCEPTION_FLT_DIVIDE_BY_ZERO:
+        LOG_CRITICAL("Exception EXCEPTION_FLT_DIVIDE_BY_ZERO ({}). ", log_hex(ec));
+        break;
+    case EXCEPTION_ILLEGAL_INSTRUCTION:
+        LOG_CRITICAL("Exception EXCEPTION_ILLEGAL_INSTRUCTION ({}). ", log_hex(ec));
+        break;
+    case EXCEPTION_IN_PAGE_ERROR:
+        LOG_CRITICAL("Exception EXCEPTION_IN_PAGE_ERROR ({}). ", log_hex(ec));
+        break;
+    case EXCEPTION_INT_DIVIDE_BY_ZERO:
+        LOG_CRITICAL("Exception EXCEPTION_INT_DIVIDE_BY_ZERO ({}). ", log_hex(ec));
+        break;
+    case EXCEPTION_PRIV_INSTRUCTION:
+        LOG_CRITICAL("Exception EXCEPTION_PRIV_INSTRUCTION ({}). ", log_hex(ec));
+        break;
+    case EXCEPTION_STACK_OVERFLOW:
+        LOG_CRITICAL("Exception EXCEPTION_STACK_OVERFLOW ({}). ", log_hex(ec));
+        break;
+    default:
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+    if (should_flush)
+        flush();
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
+void register_log_exception_handler() {
+    if (!AddVectoredExceptionHandler(0, exception_handler)) {
+        LOG_CRITICAL("Failed to register an exception handler");
+    }
+}
+
+#else
+void register_log_exception_handler() {}
+#endif
+} // namespace logging
