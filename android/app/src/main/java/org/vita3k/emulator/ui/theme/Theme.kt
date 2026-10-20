@@ -2,41 +2,66 @@ package org.vita3k.emulator.ui.theme
 
 import android.app.Activity
 import android.os.Build
-import androidx.compose.material3.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowInsetsControllerCompat
 
-private val AppBackgroundColor = Color(0xFF111111)
-private val AppTopBarColor = Color(0xFF1C1C1C)
-
+// Layers, darkest to lightest: crust (scrims, wells) < mantle (panels, sheets) < base (screens) < surface0..2 (controls)
 private val AppColorScheme = darkColorScheme(
-    primary = Color(0xFFFF9800),        
-    onPrimary = Color(0xFF1A0D00),
-    primaryContainer = Color(0xFF3D1F00),
-    onPrimaryContainer = Color(0xFFFFD8A8),
-    secondary = Color(0xFF9E9E9E),        
-    onSecondary = Color(0xFF1A1A1A),
-    secondaryContainer = Color(0xFF2C2C2C),
-    onSecondaryContainer = Color(0xFFE0E0E0),
-    tertiary = Color(0xFFBDBDBD),
-    onTertiary = Color(0xFF1A1A1A),
-    background = AppBackgroundColor,      
-    onBackground = Color(0xFFE8E8E8),
-    surface = AppTopBarColor,
-    onSurface = Color(0xFFE8E8E8),
-    surfaceVariant = Color(0xFF2A2A2A),
-    onSurfaceVariant = Color(0xFFB0B0B0),
-    surfaceContainerHigh = Color(0xFF222222),
-    surfaceContainerHighest = Color(0xFF2A2A2A),
-    outline = Color(0xFF444444),
-    error = Color(0xFFFF6B6B),
-    onError = Color(0xFF1A0000)
+    primary = Mocha.Mauve,
+    onPrimary = Mocha.Crust,
+    primaryContainer = Color(0xFF3B3150),
+    onPrimaryContainer = Mocha.Mauve,
+    inversePrimary = Color(0xFF7A4FB0),
+    secondary = Mocha.Lavender,
+    onSecondary = Mocha.Crust,
+    secondaryContainer = Mocha.Surface0,
+    onSecondaryContainer = Mocha.Text,
+    tertiary = Mocha.Teal,
+    onTertiary = Mocha.Crust,
+    tertiaryContainer = Color(0xFF233B3C),
+    onTertiaryContainer = Mocha.Teal,
+    background = Mocha.Base,
+    onBackground = Mocha.Text,
+    surface = Mocha.Base,
+    onSurface = Mocha.Text,
+    surfaceVariant = Mocha.Surface0,
+    onSurfaceVariant = Mocha.Subtext0,
+    surfaceTint = Color.Transparent,
+    inverseSurface = Mocha.Text,
+    inverseOnSurface = Mocha.Base,
+    error = Mocha.Red,
+    onError = Mocha.Crust,
+    errorContainer = Color(0xFF45283A),
+    onErrorContainer = Mocha.Red,
+    outline = Mocha.Surface1,
+    outlineVariant = Mocha.Surface0,
+    scrim = Mocha.Crust,
+    surfaceBright = Mocha.Surface0,
+    surfaceDim = Mocha.Crust,
+    surfaceContainerLowest = Mocha.Crust,
+    surfaceContainerLow = Mocha.Mantle,
+    surfaceContainer = Mocha.Mantle,
+    surfaceContainerHigh = Mocha.Mantle,
+    surfaceContainerHighest = Mocha.Surface0
+)
+
+private val AppShapes = Shapes(
+    extraSmall = RoundedCornerShape(6.dp),
+    small = RoundedCornerShape(10.dp),
+    medium = RoundedCornerShape(14.dp),
+    large = RoundedCornerShape(20.dp),
+    extraLarge = RoundedCornerShape(24.dp)
 )
 
 @Composable
@@ -64,6 +89,8 @@ fun Vita3KTheme(
 
     MaterialTheme(
         colorScheme = AppColorScheme,
+        typography = AppTypography,
+        shapes = AppShapes,
         content = content
     )
 }
@@ -74,7 +101,7 @@ fun Vita3KTheme(
  *   - ModalBottomSheet via `scrimColor = Color.Black.copy(alpha = SCRIM_ALPHA)`
  *   - Dialog / AlertDialog via [ApplyDialogDim]
  */
-const val SCRIM_ALPHA = 0.4f
+const val SCRIM_ALPHA = 0.55f
 
 /**
  * Must be called inside a Dialog or AlertDialog composable scope to reduce the system dim amount

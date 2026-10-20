@@ -1,42 +1,34 @@
 package org.vita3k.emulator.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ElevatedCard
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -46,16 +38,30 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.vita3k.emulator.R
 import org.vita3k.emulator.data.NativeUser
-import org.vita3k.emulator.ui.theme.ApplyDialogDim
+import org.vita3k.emulator.ui.components.AppButton
+import org.vita3k.emulator.ui.components.AppDialog
+import org.vita3k.emulator.ui.components.ButtonTone
+import org.vita3k.emulator.ui.components.DialogAction
+import org.vita3k.emulator.ui.components.EmptyState
+import org.vita3k.emulator.ui.components.EyebrowLabel
+import org.vita3k.emulator.ui.components.Tag
+import org.vita3k.emulator.ui.components.ToolbarButton
+import org.vita3k.emulator.ui.theme.Mocha
+import org.vita3k.emulator.ui.theme.MonoSmall
 import org.vita3k.emulator.ui.viewmodel.UserManagementViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
+private val AvatarTints = listOf(Mocha.Mauve, Mocha.Blue, Mocha.Teal, Mocha.Peach, Mocha.Pink, Mocha.Green, Mocha.Yellow, Mocha.Sapphire)
+
+private fun NativeUser.tint(): Color = AvatarTints[(id.hashCode() and Int.MAX_VALUE) % AvatarTints.size]
+
 @Composable
 fun UserManagementScreen(
     viewModel: UserManagementViewModel,
@@ -70,87 +76,96 @@ fun UserManagementScreen(
         viewModel.load()
     }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface,
-                    actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                ),
-                title = { Text(stringResource(R.string.user_management_title)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.action_back)
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = viewModel::load, enabled = !viewModel.loading && !viewModel.busy) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = stringResource(R.string.user_management_refresh)
-                        )
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ToolbarButton(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back), onBack)
+                Text(
+                    stringResource(R.string.user_management_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = Mocha.Text,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 6.dp)
+                )
+                ToolbarButton(
+                    Icons.Default.Refresh,
+                    stringResource(R.string.user_management_refresh),
+                    viewModel::load,
+                    enabled = !viewModel.loading && !viewModel.busy
+                )
+            }
+
+            when {
+                viewModel.loading && viewModel.users.isEmpty() -> {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Mocha.Mauve, trackColor = Mocha.Surface0)
                     }
                 }
-            )
-        },
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                text = { Text(stringResource(R.string.user_management_create_user)) },
-                icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                onClick = { showCreateDialog = true },
-                expanded = true
-            )
+                viewModel.users.isEmpty() -> {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        EmptyState(
+                            icon = Icons.Default.People,
+                            title = stringResource(R.string.user_management_empty_title),
+                            body = stringResource(R.string.user_management_empty_message)
+                        ) {
+                            AppButton(stringResource(R.string.user_management_create_user), { showCreateDialog = true }, icon = Icons.Default.Add)
+                        }
+                    }
+                }
+                else -> {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                        LazyColumn(
+                            modifier = Modifier
+                                .widthIn(max = 640.dp)
+                                .fillMaxSize(),
+                            contentPadding = PaddingValues(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 112.dp)
+                        ) {
+                            item {
+                                ActiveUserCard(activeUser)
+                            }
+                            item {
+                                EyebrowLabel(
+                                    stringResource(R.string.user_management_title),
+                                    modifier = Modifier.padding(start = 4.dp, top = 24.dp, bottom = 10.dp)
+                                )
+                            }
+                            itemsIndexed(viewModel.users, key = { _, user -> user.id }) { index, user ->
+                                UserRow(
+                                    user = user,
+                                    busy = viewModel.busy,
+                                    first = index == 0,
+                                    last = index == viewModel.users.lastIndex,
+                                    onActivate = { viewModel.activateUser(user, onUsersChanged) },
+                                    onDelete = { pendingDeletion = user }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
-    ) { padding ->
-        when {
-            viewModel.loading && viewModel.users.isEmpty() -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
-                }
-            }
 
-            else -> {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-                    contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 96.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    item {
-                        ActiveUserHero(
-                            activeUser = activeUser,
-                            onCreateUser = { showCreateDialog = true }
-                        )
-                    }
-
-                    if (viewModel.users.isEmpty()) {
-                        item {
-                            EmptyUsersCard(onCreateUser = { showCreateDialog = true })
-                        }
-                    } else {
-                        items(viewModel.users, key = { it.id }) { user ->
-                            UserCard(
-                                user = user,
-                                busy = viewModel.busy,
-                                onActivate = { viewModel.activateUser(user, onUsersChanged) },
-                                onDelete = { pendingDeletion = user }
-                            )
-                        }
-                    }
-                }
-            }
+        if (viewModel.users.isNotEmpty()) {
+            AppButton(
+                text = stringResource(R.string.user_management_create_user),
+                onClick = { showCreateDialog = true },
+                icon = Icons.Default.Add,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .navigationBarsPadding()
+                    .padding(20.dp)
+            )
         }
     }
 
@@ -166,214 +181,129 @@ fun UserManagementScreen(
     }
 
     pendingDeletion?.let { user ->
-        AlertDialog(
-            onDismissRequest = { pendingDeletion = null },
-            title = { Text(stringResource(R.string.user_management_delete_title)) },
-            text = {
-                ApplyDialogDim()
-                Text(stringResource(R.string.user_management_delete_message, user.name))
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        pendingDeletion = null
-                        viewModel.deleteUser(user, onUsersChanged)
-                    }
-                ) {
-                    Text(
-                        text = stringResource(R.string.action_delete),
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingDeletion = null }) {
-                    Text(stringResource(R.string.action_cancel))
-                }
-            }
-        )
+        AppDialog(
+            title = stringResource(R.string.user_management_delete_title),
+            onDismiss = { pendingDeletion = null },
+            actions = listOf(
+                DialogAction(stringResource(R.string.action_cancel), { pendingDeletion = null }),
+                DialogAction(stringResource(R.string.action_delete), {
+                    pendingDeletion = null
+                    viewModel.deleteUser(user, onUsersChanged)
+                }, ButtonTone.Danger)
+            )
+        ) {
+            Text(stringResource(R.string.user_management_delete_message, user.name))
+        }
     }
 
     viewModel.operationResult?.let { result ->
-        AlertDialog(
-            onDismissRequest = { viewModel.dismissOperationResult() },
-            title = {
-                Text(
-                    if (result.isError) {
-                        stringResource(R.string.settings_opt_error)
-                    } else {
-                        stringResource(R.string.settings_success_title)
-                    }
-                )
-            },
-            text = {
-                ApplyDialogDim()
-                Text(result.message)
-            },
-            confirmButton = {
-                TextButton(onClick = { viewModel.dismissOperationResult() }) {
-                    Text(stringResource(R.string.action_ok))
-                }
-            }
+        AppDialog(
+            title = if (result.isError) stringResource(R.string.settings_opt_error) else stringResource(R.string.settings_success_title),
+            onDismiss = { viewModel.dismissOperationResult() },
+            actions = listOf(DialogAction(stringResource(R.string.action_ok), { viewModel.dismissOperationResult() }, ButtonTone.Accent))
+        ) {
+            Text(result.message)
+        }
+    }
+}
+
+@Composable
+private fun Avatar(name: String, tint: Color, size: Int) {
+    Box(
+        modifier = Modifier
+            .size(size.dp)
+            .clip(CircleShape)
+            .background(tint.copy(alpha = 0.18f))
+            .border(1.dp, tint.copy(alpha = 0.5f), CircleShape),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            name.trim().take(1).uppercase().ifEmpty { "?" },
+            style = if (size >= 56) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleMedium,
+            color = tint
         )
     }
 }
 
 @Composable
-private fun ActiveUserHero(
-    activeUser: NativeUser?,
-    onCreateUser: () -> Unit
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f)
+private fun ActiveUserCard(activeUser: NativeUser?) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(Mocha.Mantle)
+            .border(1.dp, Mocha.Surface0, RoundedCornerShape(20.dp))
+            .padding(18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Surface(
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.1f),
-                    shape = RoundedCornerShape(20.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.padding(12.dp)
-                    )
-                }
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.user_management_active_user),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f)
-                    )
-                    Text(
-                        text = activeUser?.name ?: stringResource(R.string.user_management_active_none),
-                        style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    activeUser?.let {
-                        Text(
-                            text = it.id,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f)
-                        )
-                    }
-                }
-            }
-            FilledTonalButton(onClick = onCreateUser) {
-                Icon(Icons.Default.Add, contentDescription = null)
-                Spacer(modifier = Modifier.padding(horizontal = 4.dp))
-                Text(stringResource(R.string.user_management_create_user))
-            }
+        Avatar(activeUser?.name ?: "?", activeUser?.tint() ?: Mocha.Overlay1, 60)
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            EyebrowLabel(stringResource(R.string.user_management_active_user), color = Mocha.Mauve)
+            Text(
+                activeUser?.name ?: stringResource(R.string.user_management_active_none),
+                style = MaterialTheme.typography.headlineSmall,
+                color = Mocha.Text,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            activeUser?.let { Text(it.id, style = MonoSmall, color = Mocha.Overlay1) }
         }
     }
 }
 
 @Composable
-private fun EmptyUsersCard(
-    onCreateUser: () -> Unit
-) {
-    ElevatedCard(shape = RoundedCornerShape(24.dp)) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.user_management_empty_title),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold
-            )
-            Text(
-                text = stringResource(R.string.user_management_empty_message),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            FilledTonalButton(onClick = onCreateUser) {
-                Text(stringResource(R.string.user_management_create_user))
-            }
-        }
-    }
-}
-
-@Composable
-private fun UserCard(
+private fun UserRow(
     user: NativeUser,
     busy: Boolean,
+    first: Boolean,
+    last: Boolean,
     onActivate: () -> Unit,
     onDelete: () -> Unit
 ) {
-    ElevatedCard(shape = RoundedCornerShape(24.dp)) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+    val shape = RoundedCornerShape(
+        topStart = if (first) 18.dp else 0.dp,
+        topEnd = if (first) 18.dp else 0.dp,
+        bottomStart = if (last) 18.dp else 0.dp,
+        bottomEnd = if (last) 18.dp else 0.dp
+    )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(Mocha.Mantle)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = user.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = user.id,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                if (user.active) {
-                    AssistChip(
-                        onClick = {},
-                        enabled = false,
-                        label = { Text(stringResource(R.string.user_management_active_badge)) }
-                    )
-                }
+            Avatar(user.name, user.tint(), 40)
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(user.name, style = MaterialTheme.typography.titleSmall, color = Mocha.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(user.id, style = MonoSmall, color = Mocha.Overlay1)
             }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                FilledTonalButton(
+            if (user.active) {
+                Tag(stringResource(R.string.user_management_active_badge), Mocha.Green)
+            } else {
+                AppButton(
+                    text = stringResource(R.string.user_management_switch_user),
                     onClick = onActivate,
-                    enabled = !busy && !user.active,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(
-                        text = if (user.active) {
-                            stringResource(R.string.user_management_active_badge)
-                        } else {
-                            stringResource(R.string.user_management_switch_user)
-                        }
-                    )
-                }
-                OutlinedButton(
-                    onClick = onDelete,
-                    enabled = !busy,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Default.Delete, contentDescription = null)
-                    Spacer(modifier = Modifier.padding(horizontal = 4.dp))
-                    Text(stringResource(R.string.user_management_delete_user))
-                }
+                    tone = ButtonTone.Neutral,
+                    enabled = !busy
+                )
             }
+            ToolbarButton(
+                Icons.Default.DeleteOutline,
+                stringResource(R.string.user_management_delete_user),
+                onDelete,
+                enabled = !busy,
+                tint = Mocha.Red
+            )
         }
+        if (!last) HorizontalDivider(color = Mocha.Surface0, modifier = Modifier.padding(start = 68.dp))
     }
 }
 
@@ -385,34 +315,34 @@ private fun CreateUserDialog(
 ) {
     var userName by rememberSaveable { mutableStateOf("Vita3K") }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.user_management_create_user)) },
-        text = {
-            ApplyDialogDim()
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(stringResource(R.string.user_management_create_prompt))
-                OutlinedTextField(
+    AppDialog(
+        title = stringResource(R.string.user_management_create_user),
+        onDismiss = onDismiss,
+        actions = listOf(
+            DialogAction(stringResource(R.string.action_cancel), onDismiss),
+            DialogAction(stringResource(R.string.action_ok), { onCreate(userName.trim()) }, ButtonTone.Accent, enabled = !busy && userName.trim().isNotEmpty())
+        )
+    ) {
+        Text(stringResource(R.string.user_management_create_prompt))
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            EyebrowLabel(stringResource(R.string.user_management_name_label))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Mocha.Crust)
+                    .border(1.dp, Mocha.Mauve.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 14.dp, vertical = 13.dp)
+            ) {
+                BasicTextField(
                     value = userName,
                     onValueChange = { userName = it },
                     singleLine = true,
-                    label = { Text(stringResource(R.string.user_management_name_label)) },
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = Mocha.Text),
+                    cursorBrush = SolidColor(Mocha.Mauve),
                     modifier = Modifier.fillMaxWidth()
                 )
             }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = !busy && userName.trim().isNotEmpty(),
-                onClick = { onCreate(userName.trim()) }
-            ) {
-                Text(stringResource(R.string.action_ok))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_cancel))
-            }
         }
-    )
+    }
 }

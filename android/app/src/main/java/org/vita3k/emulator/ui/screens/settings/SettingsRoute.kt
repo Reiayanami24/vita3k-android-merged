@@ -59,8 +59,30 @@ import org.vita3k.emulator.overlay.OverlayConfig
 import org.vita3k.emulator.overlay.OverlayStore
 import org.vita3k.emulator.ui.CUSTOM_DRIVER_DOWNLOAD_URL
 import org.vita3k.emulator.ui.rememberConnectedGamepads
-import org.vita3k.emulator.ui.theme.ApplyDialogDim
+import org.vita3k.emulator.ui.components.AppButton
+import org.vita3k.emulator.ui.components.AppDialog
+import org.vita3k.emulator.ui.components.ButtonTone
+import org.vita3k.emulator.ui.components.DialogAction
+import org.vita3k.emulator.ui.components.SearchField
+import org.vita3k.emulator.ui.components.ToolbarButton
+import org.vita3k.emulator.ui.theme.Mocha
+import org.vita3k.emulator.ui.theme.MonoSmall
 import org.vita3k.emulator.ui.viewmodel.SettingsViewModel
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.draw.clip
+import androidx.compose.material.icons.filled.Check
 
 private val CUSTOM_DRIVER_MIME_TYPES = arrayOf(
     "application/zip",
@@ -217,151 +239,133 @@ fun SettingsRoute(
         scrollState.scrollTo(0)
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        titleContentColor = MaterialTheme.colorScheme.onSurface,
-                        actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        navigationIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    ),
-                    title = {
-                        if (searchActive) {
-                            SettingsTopBarSearchField(
-                                query = searchQuery,
-                                onQueryChange = { searchQuery = it },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        } else {
-                            Text(
-                                if (isPerApp && appName != null) {
-                                    stringResource(R.string.settings_custom_config_label, appName)
-                                } else {
-                                    stringResource(R.string.settings_title)
-                                }
-                            )
-                        }
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = { tryBack() }) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = stringResource(R.string.action_back)
-                            )
-                        }
-                    },
-                    actions = {
-                        if (!searchActive && hasPendingChanges && !viewModel.saving && !viewModel.customDriverBusy) {
-                            IconButton(onClick = {
-                                saveSettings { restartRequired ->
-                                    if (restartRequired.isNotEmpty()) {
-                                        pendingRestartSettings = restartRequired
-                                    }
-                                }
-                            }) {
-                                Icon(
-                                    imageVector = Icons.Default.Save,
-                                    contentDescription = stringResource(R.string.settings_save_cd)
-                                )
-                            }
-                        }
-                        IconButton(onClick = {
-                            if (searchActive) {
-                                closeSearch()
-                            } else {
-                                searchActive = true
-                            }
-                        }) {
-                            Icon(
-                                imageVector = if (searchActive) Icons.Default.Close else Icons.Default.Search,
-                                contentDescription = if (searchActive) {
-                                    stringResource(R.string.apps_list_cd_close_search)
-                                } else {
-                                    stringResource(R.string.apps_list_cd_search)
-                                }
-                            )
-                        }
-                        SettingsOverflowMenu(
-                            expanded = showOverflowMenu,
-                            onExpandedChange = { showOverflowMenu = it },
-                            showDeleteCustomConfig = isPerApp && viewModel.hasCustomConfig,
-                            onResetDefaults = {
-                                showOverflowMenu = false
-                                showResetDefaultsDialog = true
-                            },
-                            onDeleteCustomConfig = {
-                                showOverflowMenu = false
-                                showDeleteCustomConfigDialog = true
-                            }
-                        )
-                    }
-                )
+    fun save() {
+        saveSettings { restartRequired ->
+            if (restartRequired.isNotEmpty()) {
+                pendingRestartSettings = restartRequired
             }
-        ) { padding ->
-            if (!settingsLoaded) {
-                SettingsLoadingState(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding)
-                )
-                return@Scaffold
-            }
+        }
+    }
 
-            val searchEntries = rememberSettingsSearchEntries(
-                isPerApp = isPerApp,
-                backendRenderer = viewModel.config.backendRenderer,
-                showCustomDriverOptions = viewModel.showCustomDriverOptions,
-                showTurboModeOption = viewModel.showCustomDriverOptions
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
+            SettingsHeader(
+                title = if (isPerApp) appName ?: titleId.orEmpty() else stringResource(R.string.settings_title),
+                eyebrow = if (isPerApp) stringResource(R.string.app_menu_custom_config) else null,
+                searchActive = searchActive,
+                searchQuery = searchQuery,
+                onSearchChange = { searchQuery = it },
+                onToggleSearch = { if (searchActive) closeSearch() else searchActive = true },
+                onBack = { tryBack() },
+                overflow = {
+                    SettingsOverflowMenu(
+                        expanded = showOverflowMenu,
+                        onExpandedChange = { showOverflowMenu = it },
+                        showDeleteCustomConfig = isPerApp && viewModel.hasCustomConfig,
+                        onResetDefaults = {
+                            showOverflowMenu = false
+                            showResetDefaultsDialog = true
+                        },
+                        onDeleteCustomConfig = {
+                            showOverflowMenu = false
+                            showDeleteCustomConfigDialog = true
+                        }
+                    )
+                }
             )
 
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .background(MaterialTheme.colorScheme.background)
-            ) {
-                SettingsContentPane(
-                    modifier = Modifier.fillMaxSize(),
-                    titleId = titleId,
+            if (!settingsLoaded) {
+                SettingsLoadingState(modifier = Modifier.fillMaxSize())
+            } else {
+                val searchEntries = rememberSettingsSearchEntries(
                     isPerApp = isPerApp,
-                    viewModel = viewModel,
-                    overlayConfig = overlayState.config,
-                    supportedMemoryMappingMask = viewModel.supportedMemoryMappingMask,
-                    customDriverLoadStatus = viewModel.customDriverLoadStatus,
-                    availableCameras = viewModel.availableCameras,
-                    availableAdhocAddresses = viewModel.availableAdhocAddresses,
-                    selectedCategory = selectedCategory,
-                    searchQuery = searchQuery,
-                    onCloseSearch = ::closeSearch,
-                    onSelectedCategoryChange = { selectedCategory = it },
-                    searchEntries = searchEntries,
-                    currentStoragePath = viewModel.currentStoragePath,
-                    scrollState = scrollState,
-                    controllerConnected = controllerConnected,
-                    hasOverlayChanges = overlayDirty,
-                    connectedGamepads = connectedGamepads,
-                    categories = categories,
-                    onChangeStorageFolder = ::requestStorageFolderChange,
-                    onResetStorageFolder = { viewModel.resetStorageFolder(onStorageChanged) },
-                    onInstallCustomDriver = ::requestCustomDriverInstall,
-                    onDownloadCustomDriver = { openUrl(CUSTOM_DRIVER_DOWNLOAD_URL) },
-                    onPickCameraImage = ::pickCameraImage,
-                    onRequestRemoveCustomDriver = { pendingCustomDriverRemoval = it },
-                    onClearAllCustomConfigs = { showClearAllCustomConfigsDialog = true },
-                    onOverlayConfigChange = { updated ->
-                        overlayState = overlayState.copy(config = updated.normalized())
-                    },
-                    onStartControlsEditor = {
-                        showOverlayEditor = true
-                    },
-                    onResetControlsLayout = {
-                        overlayState = overlayState.copy(layout = OverlayStore.defaultLayout(context))
-                    },
-                    onShowHelp = { activeHelp = it },
+                    backendRenderer = viewModel.config.backendRenderer,
+                    showCustomDriverOptions = viewModel.showCustomDriverOptions,
+                    showTurboModeOption = viewModel.showCustomDriverOptions
                 )
+
+                BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                    val wide = maxWidth >= 760.dp
+                    val pane: @Composable (Modifier) -> Unit = { paneModifier ->
+                        SettingsContentPane(
+                            modifier = paneModifier,
+                            titleId = titleId,
+                            isPerApp = isPerApp,
+                            showCategoryStrip = !wide,
+                            viewModel = viewModel,
+                            overlayConfig = overlayState.config,
+                            supportedMemoryMappingMask = viewModel.supportedMemoryMappingMask,
+                            customDriverLoadStatus = viewModel.customDriverLoadStatus,
+                            availableCameras = viewModel.availableCameras,
+                            availableAdhocAddresses = viewModel.availableAdhocAddresses,
+                            selectedCategory = selectedCategory,
+                            searchQuery = searchQuery,
+                            onCloseSearch = ::closeSearch,
+                            onSelectedCategoryChange = { selectedCategory = it },
+                            searchEntries = searchEntries,
+                            currentStoragePath = viewModel.currentStoragePath,
+                            scrollState = scrollState,
+                            controllerConnected = controllerConnected,
+                            hasOverlayChanges = overlayDirty,
+                            connectedGamepads = connectedGamepads,
+                            categories = categories,
+                            onChangeStorageFolder = ::requestStorageFolderChange,
+                            onResetStorageFolder = { viewModel.resetStorageFolder(onStorageChanged) },
+                            onInstallCustomDriver = ::requestCustomDriverInstall,
+                            onDownloadCustomDriver = { openUrl(CUSTOM_DRIVER_DOWNLOAD_URL) },
+                            onPickCameraImage = ::pickCameraImage,
+                            onRequestRemoveCustomDriver = { pendingCustomDriverRemoval = it },
+                            onClearAllCustomConfigs = { showClearAllCustomConfigsDialog = true },
+                            onOverlayConfigChange = { updated ->
+                                overlayState = overlayState.copy(config = updated.normalized())
+                            },
+                            onStartControlsEditor = {
+                                showOverlayEditor = true
+                            },
+                            onResetControlsLayout = {
+                                overlayState = overlayState.copy(layout = OverlayStore.defaultLayout(context))
+                            },
+                            onShowHelp = { activeHelp = it },
+                        )
+                    }
+                    if (wide) {
+                        Row(modifier = Modifier.fillMaxSize()) {
+                            SettingsCategoryRail(
+                                categories = categories,
+                                selectedCategory = selectedCategory,
+                                onCategorySelected = {
+                                    selectedCategory = it
+                                    closeSearch()
+                                },
+                                modifier = Modifier
+                                    .width(232.dp)
+                                    .fillMaxHeight()
+                            )
+                            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.TopCenter) {
+                                pane(Modifier.widthIn(max = 760.dp).fillMaxSize())
+                            }
+                        }
+                    } else {
+                        pane(Modifier.fillMaxSize())
+                    }
+                }
             }
+        }
+
+        AnimatedVisibility(
+            visible = !searchActive && hasPendingChanges && !viewModel.customDriverBusy,
+            enter = slideInVertically { it } + fadeIn(),
+            exit = slideOutVertically { it } + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(16.dp)
+        ) {
+            UnsavedChangesBar(saving = viewModel.saving, onSave = ::save)
         }
 
         if (showOverlayEditor) {
@@ -401,45 +405,29 @@ fun SettingsRoute(
     }
 
     if (showResetDefaultsDialog) {
-        AlertDialog(
-            onDismissRequest = { showResetDefaultsDialog = false },
-            title = { Text(stringResource(R.string.settings_confirm_reset_defaults_title)) },
-            text = {
-                ApplyDialogDim()
-                Text(stringResource(R.string.settings_confirm_reset_defaults_message))
-            },
-            confirmButton = {
-                TextButton(onClick = {
+        AppDialog(
+            title = stringResource(R.string.settings_confirm_reset_defaults_title),
+            onDismiss = { showResetDefaultsDialog = false },
+            actions = listOf(
+                DialogAction(stringResource(R.string.action_cancel), { showResetDefaultsDialog = false }),
+                DialogAction(stringResource(R.string.settings_reset_defaults), {
                     showResetDefaultsDialog = false
                     viewModel.resetToDefaults()
                     overlayState = OverlayStore.defaultState(context)
-                }) {
-                    Text(stringResource(R.string.settings_reset_defaults))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showResetDefaultsDialog = false }) {
-                    Text(stringResource(R.string.action_cancel))
-                }
-            }
-        )
+                }, ButtonTone.Accent)
+            )
+        ) {
+            Text(stringResource(R.string.settings_confirm_reset_defaults_message))
+        }
     }
 
     if (showDeleteCustomConfigDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteCustomConfigDialog = false },
-            title = { Text(stringResource(R.string.settings_confirm_delete_custom_config_title)) },
-            text = {
-                ApplyDialogDim()
-                Text(
-                    stringResource(
-                        R.string.settings_confirm_delete_custom_config_message,
-                        appName ?: titleId ?: ""
-                    )
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
+        AppDialog(
+            title = stringResource(R.string.settings_confirm_delete_custom_config_title),
+            onDismiss = { showDeleteCustomConfigDialog = false },
+            actions = listOf(
+                DialogAction(stringResource(R.string.action_cancel), { showDeleteCustomConfigDialog = false }),
+                DialogAction(stringResource(R.string.action_delete), {
                     showDeleteCustomConfigDialog = false
                     OverlayStore.deleteGameOverride(context, overlayScopeId)
                     reloadOverlayState()
@@ -448,129 +436,76 @@ fun SettingsRoute(
                             pendingRestartSettings = restartRequired
                         }
                     }
-                }) {
-                    Text(
-                        text = stringResource(R.string.action_delete),
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteCustomConfigDialog = false }) {
-                    Text(stringResource(R.string.action_cancel))
-                }
-            }
-        )
+                }, ButtonTone.Danger)
+            )
+        ) {
+            Text(stringResource(R.string.settings_confirm_delete_custom_config_message, appName ?: titleId ?: ""))
+        }
     }
 
     if (showClearAllCustomConfigsDialog) {
-        AlertDialog(
-            onDismissRequest = { showClearAllCustomConfigsDialog = false },
-            title = { Text(stringResource(R.string.settings_confirm_clear_all_title)) },
-            text = {
-                ApplyDialogDim()
-                Text(stringResource(R.string.settings_confirm_clear_all_message))
-            },
-            confirmButton = {
-                TextButton(onClick = {
+        AppDialog(
+            title = stringResource(R.string.settings_confirm_clear_all_title),
+            onDismiss = { showClearAllCustomConfigsDialog = false },
+            actions = listOf(
+                DialogAction(stringResource(R.string.action_cancel), { showClearAllCustomConfigsDialog = false }),
+                DialogAction(stringResource(R.string.action_delete), {
                     showClearAllCustomConfigsDialog = false
                     OverlayStore.clearAllGameOverrides(context)
                     viewModel.clearAllCustomConfigs()
-                }) {
-                    Text(
-                        text = stringResource(R.string.action_delete),
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showClearAllCustomConfigsDialog = false }) {
-                    Text(stringResource(R.string.action_cancel))
-                }
-            }
-        )
+                }, ButtonTone.Danger)
+            )
+        ) {
+            Text(stringResource(R.string.settings_confirm_clear_all_message))
+        }
     }
 
     pendingCustomDriverRemoval?.let { driverName ->
-        AlertDialog(
-            onDismissRequest = { pendingCustomDriverRemoval = null },
-            title = { Text(stringResource(R.string.settings_confirm_remove_custom_driver_title)) },
-            text = {
-                ApplyDialogDim()
-                Text(stringResource(R.string.settings_confirm_remove_custom_driver_message, driverName))
-            },
-            confirmButton = {
-                TextButton(onClick = {
+        AppDialog(
+            title = stringResource(R.string.settings_confirm_remove_custom_driver_title),
+            onDismiss = { pendingCustomDriverRemoval = null },
+            actions = listOf(
+                DialogAction(stringResource(R.string.action_cancel), { pendingCustomDriverRemoval = null }),
+                DialogAction(stringResource(R.string.action_delete), {
                     pendingCustomDriverRemoval = null
                     viewModel.removeCustomDriver(driverName)
-                }) {
-                    Text(
-                        text = stringResource(R.string.action_delete),
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingCustomDriverRemoval = null }) {
-                    Text(stringResource(R.string.action_cancel))
-                }
-            }
-        )
+                }, ButtonTone.Danger)
+            )
+        ) {
+            Text(stringResource(R.string.settings_confirm_remove_custom_driver_message, driverName))
+        }
     }
 
     viewModel.operationResult?.let { result ->
-        AlertDialog(
-            onDismissRequest = { viewModel.dismissOperationResult() },
-            title = {
-                Text(
-                    if (result.isError) {
-                        stringResource(R.string.settings_opt_error)
-                    } else {
-                        stringResource(R.string.settings_success_title)
-                    }
-                )
-            },
-            text = {
-                ApplyDialogDim()
-                Text(result.message)
-            },
-            confirmButton = {
-                TextButton(onClick = { viewModel.dismissOperationResult() }) {
-                    Text(stringResource(R.string.action_ok))
-                }
-            }
-        )
+        AppDialog(
+            title = if (result.isError) stringResource(R.string.settings_opt_error) else stringResource(R.string.settings_success_title),
+            onDismiss = { viewModel.dismissOperationResult() },
+            actions = listOf(DialogAction(stringResource(R.string.action_ok), { viewModel.dismissOperationResult() }, ButtonTone.Accent))
+        ) {
+            Text(result.message)
+        }
     }
 
     pendingRestartSettings?.let { settings ->
-        AlertDialog(
-            onDismissRequest = { },
-            title = { Text(stringResource(R.string.settings_restart_required_title)) },
-            text = {
-                ApplyDialogDim()
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(stringResource(R.string.settings_restart_required_summary))
-                    Text(
-                        stringResource(
-                            R.string.settings_restart_required_message,
-                            formatRestartRequiredSettings(context, settings)
-                        )
-                    )
+        AppDialog(
+            title = stringResource(R.string.settings_restart_required_title),
+            onDismiss = {},
+            dismissible = false,
+            actions = listOf(DialogAction(stringResource(R.string.action_ok), {
+                pendingRestartSettings = null
+                val shouldClose = closeAfterRestartNotice
+                closeAfterRestartNotice = false
+                if (shouldClose) {
+                    onBack()
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    pendingRestartSettings = null
-                    val shouldClose = closeAfterRestartNotice
-                    closeAfterRestartNotice = false
-                    if (shouldClose) {
-                        onBack()
-                    }
-                }) {
-                    Text(stringResource(R.string.action_ok))
-                }
-            }
-        )
+            }, ButtonTone.Accent))
+        ) {
+            Text(stringResource(R.string.settings_restart_required_summary))
+            Text(
+                stringResource(R.string.settings_restart_required_message, formatRestartRequiredSettings(context, settings)),
+                color = Mocha.Text
+            )
+        }
     }
 
     activeHelp?.let { help ->
@@ -583,6 +518,7 @@ private fun SettingsContentPane(
     modifier: Modifier,
     titleId: String?,
     isPerApp: Boolean,
+    showCategoryStrip: Boolean,
     viewModel: SettingsViewModel,
     overlayConfig: OverlayConfig,
     supportedMemoryMappingMask: Int,
@@ -613,31 +549,40 @@ private fun SettingsContentPane(
     onShowHelp: (SettingsHelpEntry) -> Unit,
 ) {
     Column(
-        modifier = modifier
-            .verticalScroll(scrollState)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp)
+        modifier = modifier.verticalScroll(scrollState),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        if (showCategoryStrip) {
+            SettingsCategoryStrip(
+                categories = categories,
+                selectedCategory = selectedCategory,
+                onCategorySelected = onSelectedCategoryChange,
+                modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+            )
+        }
+
+        Column(
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = if (showCategoryStrip) 0.dp else 8.dp, bottom = 120.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
         if (isPerApp && viewModel.hasCustomConfig) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = MaterialTheme.colorScheme.primaryContainer,
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Mocha.Lavender.copy(alpha = 0.10f))
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                Icon(Icons.Default.Check, contentDescription = null, tint = Mocha.Lavender, modifier = Modifier.size(18.dp))
                 Text(
                     text = stringResource(R.string.settings_custom_config_banner),
                     style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                    color = Mocha.Lavender
                 )
             }
         }
-
-        SettingsCategoryStrip(
-            categories = categories,
-            selectedCategory = selectedCategory,
-            onCategorySelected = onSelectedCategoryChange
-        )
 
         if (searchQuery.isBlank()) {
             SettingsCategoryBody(
@@ -687,9 +632,97 @@ private fun SettingsContentPane(
             )
         }
 
-        if (titleId == null && (viewModel.isDirty || hasOverlayChanges)) {
-            Spacer(modifier = Modifier.width(1.dp))
         }
+    }
+}
+
+@Composable
+internal fun SettingsHeader(
+    title: String,
+    eyebrow: String?,
+    searchActive: Boolean,
+    searchQuery: String,
+    onSearchChange: (String) -> Unit,
+    onToggleSearch: () -> Unit,
+    onBack: () -> Unit,
+    overflow: @Composable () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        ToolbarButton(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back), onBack)
+        if (searchActive) {
+            SearchField(
+                query = searchQuery,
+                onQueryChange = onSearchChange,
+                placeholder = stringResource(R.string.settings_search_placeholder),
+                autoFocus = true,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 4.dp)
+            )
+        } else {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 6.dp)
+            ) {
+                if (eyebrow != null) {
+                    Text(eyebrow.uppercase(), style = MonoSmall, color = Mocha.Mauve)
+                }
+                Text(
+                    title,
+                    style = if (eyebrow != null) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall,
+                    color = Mocha.Text,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+            }
+        }
+        ToolbarButton(
+            if (searchActive) Icons.Default.Close else Icons.Default.Search,
+            if (searchActive) stringResource(R.string.apps_list_cd_close_search) else stringResource(R.string.apps_list_cd_search),
+            onToggleSearch
+        )
+        overflow()
+    }
+}
+
+@Composable
+internal fun UnsavedChangesBar(saving: Boolean, onSave: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .widthIn(max = 520.dp)
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(Mocha.Mantle)
+            .border(1.dp, Mocha.Surface1, RoundedCornerShape(18.dp))
+            .padding(start = 18.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(androidx.compose.foundation.shape.CircleShape)
+                .background(Mocha.Peach)
+        )
+        Text(
+            stringResource(R.string.settings_unsaved_bar),
+            style = MaterialTheme.typography.labelLarge,
+            color = Mocha.Text,
+            modifier = Modifier.weight(1f)
+        )
+        AppButton(
+            text = stringResource(R.string.settings_save),
+            onClick = onSave,
+            icon = Icons.Default.Save,
+            enabled = !saving
+        )
     }
 }
 
@@ -702,75 +735,22 @@ private fun SettingsOverflowMenu(
     onDeleteCustomConfig: () -> Unit
 ) {
     Box {
-        IconButton(onClick = { onExpandedChange(true) }) {
-            Icon(
-                imageVector = Icons.Default.MoreVert,
-                contentDescription = stringResource(R.string.settings_more_options)
-            )
-        }
+        ToolbarButton(Icons.Default.MoreVert, stringResource(R.string.settings_more_options), { onExpandedChange(true) })
         DropdownMenu(
             expanded = expanded,
-            onDismissRequest = { onExpandedChange(false) }
+            onDismissRequest = { onExpandedChange(false) },
+            containerColor = Mocha.Mantle,
+            shape = RoundedCornerShape(14.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, Mocha.Surface0)
         ) {
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.settings_reset_defaults)) },
+                text = { Text(stringResource(R.string.settings_reset_defaults), color = Mocha.Text) },
                 onClick = onResetDefaults
             )
             if (showDeleteCustomConfig) {
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.settings_delete_custom_config)) },
+                    text = { Text(stringResource(R.string.settings_delete_custom_config), color = Mocha.Red) },
                     onClick = onDeleteCustomConfig
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun SettingsTopBarSearchField(
-    query: String,
-    onQueryChange: (String) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val textStyle = MaterialTheme.typography.bodyLarge.merge(
-        TextStyle(color = MaterialTheme.colorScheme.onSurface)
-    )
-
-    Surface(
-        modifier = modifier,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
-        shape = RoundedCornerShape(22.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 40.dp)
-                .padding(start = 12.dp, end = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.Search,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 10.dp)
-            ) {
-                if (query.isBlank()) {
-                    Text(
-                        text = stringResource(R.string.settings_search_placeholder),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                BasicTextField(
-                    value = query,
-                    onValueChange = onQueryChange,
-                    singleLine = true,
-                    textStyle = textStyle,
-                    modifier = Modifier.fillMaxWidth()
                 )
             }
         }
@@ -784,48 +764,15 @@ private fun SettingsUnsavedChangesDialog(
     onSaveAndExit: () -> Unit,
     onDiscard: () -> Unit
 ) {
-    Dialog(onDismissRequest = onCancel) {
-        ApplyDialogDim()
-        Surface(
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            tonalElevation = 0.dp,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(20.dp)
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = stringResource(R.string.settings_unsaved_title),
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = stringResource(R.string.settings_unsaved_message),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    TextButton(onClick = onCancel, enabled = !saving) {
-                        Text(stringResource(R.string.action_cancel))
-                    }
-                    TextButton(onClick = onDiscard, enabled = !saving) {
-                        Text(
-                            text = stringResource(R.string.settings_discard),
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-                    TextButton(onClick = onSaveAndExit, enabled = !saving) {
-                        Text(stringResource(R.string.settings_save_and_exit))
-                    }
-                }
-            }
-        }
+    AppDialog(
+        title = stringResource(R.string.settings_unsaved_title),
+        onDismiss = onCancel,
+        actions = listOf(
+            DialogAction(stringResource(R.string.action_cancel), onCancel, enabled = !saving),
+            DialogAction(stringResource(R.string.settings_discard), onDiscard, ButtonTone.Danger, enabled = !saving),
+            DialogAction(stringResource(R.string.settings_save_and_exit), onSaveAndExit, ButtonTone.Accent, enabled = !saving)
+        )
+    ) {
+        Text(stringResource(R.string.settings_unsaved_message))
     }
 }

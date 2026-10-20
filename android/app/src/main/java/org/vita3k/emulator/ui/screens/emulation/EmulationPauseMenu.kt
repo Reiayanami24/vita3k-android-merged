@@ -87,7 +87,19 @@ import org.vita3k.emulator.ui.screens.settings.SettingsNote
 import org.vita3k.emulator.ui.screens.settings.OverlaySettingsRows
 import org.vita3k.emulator.ui.screens.settings.settingsFilterChipColors
 import org.vita3k.emulator.ui.screens.settings.settingsCategories
-import org.vita3k.emulator.ui.theme.ApplyDialogDim
+import org.vita3k.emulator.ui.components.AppButton
+import org.vita3k.emulator.ui.components.AppDialog
+import org.vita3k.emulator.ui.components.ButtonTone
+import org.vita3k.emulator.ui.components.DialogAction
+import org.vita3k.emulator.ui.components.EyebrowLabel
+import org.vita3k.emulator.ui.components.Panel
+import org.vita3k.emulator.ui.components.Segmented
+import org.vita3k.emulator.ui.components.ToolbarButton
+import org.vita3k.emulator.ui.theme.Mocha
+import org.vita3k.emulator.ui.theme.MonoSmall
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import org.vita3k.emulator.ui.theme.Vita3KTheme
 import org.vita3k.emulator.ui.viewmodel.EmulationSessionViewModel
 import org.vita3k.emulator.ui.viewmodel.SettingsViewModel
@@ -206,7 +218,7 @@ private fun EmulationPauseMenu(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.28f))
+                    .background(Mocha.Crust.copy(alpha = 0.45f))
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
@@ -258,109 +270,46 @@ private fun EmulationPauseMenu(
     }
 
     if (uiState.showExitConfirmation) {
-        AlertDialog(
-            onDismissRequest = { sessionViewModel.dismissExitConfirmation() },
-            title = { Text(stringResource(R.string.emulation_exit_title)) },
-            text = {
-                ApplyDialogDim()
-                Text(stringResource(R.string.emulation_exit_message))
-            },
-            confirmButton = {
-                TextButton(onClick = { sessionViewModel.confirmExit(activity) }) {
-                    Text(
-                        text = stringResource(R.string.emulation_exit),
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { sessionViewModel.dismissExitConfirmation() }) {
-                    Text(stringResource(R.string.action_cancel))
-                }
-            }
-        )
+        AppDialog(
+            title = stringResource(R.string.emulation_exit_title),
+            onDismiss = { sessionViewModel.dismissExitConfirmation() },
+            actions = listOf(
+                DialogAction(stringResource(R.string.action_cancel), { sessionViewModel.dismissExitConfirmation() }),
+                DialogAction(stringResource(R.string.emulation_exit), { sessionViewModel.confirmExit(activity) }, ButtonTone.Danger)
+            )
+        ) {
+            Text(stringResource(R.string.emulation_exit_message))
+        }
     }
 
     pendingRestartSettings?.let { settings ->
-        AlertDialog(
-            onDismissRequest = { },
-            title = { Text(stringResource(R.string.settings_restart_required_title)) },
-            text = {
-                ApplyDialogDim()
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(stringResource(R.string.settings_restart_required_summary))
-                    Text(
-                        stringResource(
-                            R.string.settings_restart_required_message,
-                            formatRestartRequiredSettings(context, settings)
-                        )
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
+        AppDialog(
+            title = stringResource(R.string.settings_restart_required_title),
+            onDismiss = {},
+            dismissible = false,
+            actions = listOf(
+                DialogAction(stringResource(R.string.settings_restart_later), { pendingRestartSettings = null }),
+                DialogAction(stringResource(R.string.settings_restart_app), {
                     pendingRestartSettings = null
                     activity.restartApp(uiState.titleId, "", "")
-                }) {
-                    Text(stringResource(R.string.settings_restart_app))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    pendingRestartSettings = null
-                }) {
-                    Text(stringResource(R.string.settings_restart_later))
-                }
-            }
-        )
+                }, ButtonTone.Accent)
+            )
+        ) {
+            Text(stringResource(R.string.settings_restart_required_summary))
+            Text(stringResource(R.string.settings_restart_required_message, formatRestartRequiredSettings(context, settings)), color = Mocha.Text)
+        }
     }
 
-    settingsViewModel.operationResult?.let { result ->
-        AlertDialog(
-            onDismissRequest = { settingsViewModel.dismissOperationResult() },
-            title = {
-                Text(
-                    if (result.isError) {
-                        stringResource(R.string.settings_opt_error)
-                    } else {
-                        stringResource(R.string.settings_success_title)
-                    }
-                )
-            },
-            text = {
-                ApplyDialogDim()
+    listOf(settingsViewModel, globalSettingsViewModel).forEach { viewModel ->
+        viewModel.operationResult?.let { result ->
+            AppDialog(
+                title = if (result.isError) stringResource(R.string.settings_opt_error) else stringResource(R.string.settings_success_title),
+                onDismiss = { viewModel.dismissOperationResult() },
+                actions = listOf(DialogAction(stringResource(R.string.action_ok), { viewModel.dismissOperationResult() }, ButtonTone.Accent))
+            ) {
                 Text(result.message)
-            },
-            confirmButton = {
-                TextButton(onClick = { settingsViewModel.dismissOperationResult() }) {
-                    Text(stringResource(R.string.action_ok))
-                }
             }
-        )
-    }
-
-    globalSettingsViewModel.operationResult?.let { result ->
-        AlertDialog(
-            onDismissRequest = { globalSettingsViewModel.dismissOperationResult() },
-            title = {
-                Text(
-                    if (result.isError) {
-                        stringResource(R.string.settings_opt_error)
-                    } else {
-                        stringResource(R.string.settings_success_title)
-                    }
-                )
-            },
-            text = {
-                ApplyDialogDim()
-                Text(result.message)
-            },
-            confirmButton = {
-                TextButton(onClick = { globalSettingsViewModel.dismissOperationResult() }) {
-                    Text(stringResource(R.string.action_ok))
-                }
-            }
-        )
+        }
     }
 
     pendingHelp?.let { help ->
@@ -397,9 +346,10 @@ private fun PauseDrawer(
             .fillMaxHeight()
             .widthIn(max = 420.dp)
             .fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+        shape = RoundedCornerShape(24.dp),
+        color = Mocha.Mantle.copy(alpha = 0.98f),
+        contentColor = Mocha.Text,
+        border = BorderStroke(1.dp, Mocha.Surface0)
     ) {
         Column(
             modifier = Modifier
@@ -471,40 +421,24 @@ private fun PauseHeader(
     subtitle: String,
     onClose: () -> Unit
 ) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.48f)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Row(
-            modifier = Modifier.padding(start = 16.dp, top = 14.dp, end = 8.dp, bottom = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            IconButton(onClick = onClose) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = stringResource(R.string.emulation_menu_close),
-                    tint = MaterialTheme.colorScheme.onSurface
-                )
-            }
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(subtitle, style = MonoSmall, color = Mocha.Mauve, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleLarge,
+                color = Mocha.Text,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
         }
+        ToolbarButton(Icons.Default.Close, stringResource(R.string.emulation_menu_close), onClose)
     }
 }
 
@@ -513,48 +447,28 @@ private fun PauseTabRow(
     selected: PauseMenuTab,
     onSelected: (PauseMenuTab) -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        PauseMenuTab.entries.forEach { tab ->
-            FilterChip(
-                selected = tab == selected,
-                onClick = { onSelected(tab) },
-                colors = settingsFilterChipColors(),
-                leadingIcon = {
-                    Icon(
-                        imageVector = tab.icon,
-                        contentDescription = null
-                    )
-                },
-                label = {
-                    Text(
-                        text = stringResource(tab.labelRes),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            )
-        }
-    }
+    Segmented(
+        options = PauseMenuTab.entries.map { it.icon to stringResource(it.labelRes) },
+        selectedIndex = PauseMenuTab.entries.indexOf(selected),
+        onSelect = { onSelected(PauseMenuTab.entries[it]) },
+        iconsOnly = false,
+        modifier = Modifier.fillMaxWidth()
+    )
 }
 
 @Composable
 private fun PauseStatusBanner(message: String) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.78f)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(Mocha.Green.copy(alpha = 0.10f))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Text(
-            text = message,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
-        )
+        Icon(Icons.Default.Done, contentDescription = null, tint = Mocha.Green, modifier = Modifier.size(18.dp))
+        Text(text = message, style = MaterialTheme.typography.bodyMedium, color = Mocha.Green)
     }
 }
 
@@ -572,30 +486,25 @@ private fun SessionTab(
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            FilledTonalButton(
+            AppButton(
+                text = stringResource(if (uiState.isPaused) R.string.emulation_resume else R.string.emulation_pause),
                 onClick = { sessionViewModel.togglePause(activity) },
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(
-                    imageVector = if (uiState.isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
-                    contentDescription = null
-                )
-                Spacer(modifier = Modifier.padding(horizontal = 4.dp))
-                Text(stringResource(if (uiState.isPaused) R.string.emulation_resume else R.string.emulation_pause))
-            }
-            FilledTonalButton(
+                icon = if (uiState.isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp)
+            )
+            AppButton(
+                text = stringResource(R.string.emulation_exit),
                 onClick = { sessionViewModel.requestExit() },
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = null)
-                Spacer(modifier = Modifier.padding(horizontal = 4.dp))
-                Text(
-                    text = stringResource(R.string.emulation_exit),
-                    color = MaterialTheme.colorScheme.error
-                )
-            }
+                tone = ButtonTone.Danger,
+                icon = Icons.AutoMirrored.Filled.ExitToApp,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp)
+            )
         }
 
         CustomConfigSection(
@@ -640,86 +549,53 @@ private fun CustomConfigSection(
     onReset: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.36f),
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        shape = RoundedCornerShape(20.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
+    Panel(contentPadding = PaddingValues(16.dp), spacing = 12.dp) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(if (hasCustomConfig) Mocha.Lavender else Mocha.Surface2)
+            )
             Text(
                 text = stringResource(R.string.emulation_custom_config),
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onSurface
+                style = MaterialTheme.typography.titleMedium,
+                color = Mocha.Text
             )
-            Text(
-                text = stringResource(
-                    if (hasCustomConfig) {
-                        R.string.emulation_custom_config_active
-                    } else {
-                        R.string.emulation_custom_config_inactive
-                    }
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                FilledTonalButton(
-                    onClick = onSave,
-                    enabled = settingsLoaded && !saving,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(44.dp)
-                ) {
-                    Icon(Icons.Default.Save, contentDescription = null)
-                    Spacer(modifier = Modifier.padding(horizontal = 3.dp))
-                    Text(
-                        text = stringResource(
-                            if (hasCustomConfig) {
-                                R.string.emulation_save_config_short
-                            } else {
-                                R.string.emulation_create_config_short
-                            }
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                OutlinedButton(
-                    onClick = onReset,
-                    enabled = settingsLoaded && hasCustomConfig && !saving,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(44.dp)
-                ) {
-                    Icon(Icons.Default.Restore, contentDescription = null)
-                    Spacer(modifier = Modifier.padding(horizontal = 3.dp))
-                    Text(
-                        text = stringResource(R.string.emulation_reset_config_short),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-            OutlinedButton(
-                onClick = onOpenSettings,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(44.dp),
-                enabled = settingsLoaded
-            ) {
-                Icon(Icons.Default.Settings, contentDescription = null)
-                Spacer(modifier = Modifier.padding(horizontal = 4.dp))
-                Text(stringResource(R.string.emulation_open_settings_short))
-            }
         }
+        Text(
+            text = stringResource(if (hasCustomConfig) R.string.emulation_custom_config_active else R.string.emulation_custom_config_inactive),
+            style = MaterialTheme.typography.bodySmall,
+            color = Mocha.Subtext0
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            AppButton(
+                text = stringResource(if (hasCustomConfig) R.string.emulation_save_config_short else R.string.emulation_create_config_short),
+                onClick = onSave,
+                icon = Icons.Default.Save,
+                enabled = settingsLoaded && !saving,
+                modifier = Modifier.weight(1f)
+            )
+            AppButton(
+                text = stringResource(R.string.emulation_reset_config_short),
+                onClick = onReset,
+                tone = ButtonTone.Neutral,
+                icon = Icons.Default.Restore,
+                enabled = settingsLoaded && hasCustomConfig && !saving,
+                modifier = Modifier.weight(1f)
+            )
+        }
+        AppButton(
+            text = stringResource(R.string.emulation_open_settings_short),
+            onClick = onOpenSettings,
+            tone = ButtonTone.Neutral,
+            icon = Icons.Default.Settings,
+            enabled = settingsLoaded,
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }
 
@@ -761,27 +637,25 @@ private fun ControllerTab(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            OutlinedButton(
+            AppButton(
+                text = stringResource(R.string.settings_discard),
                 onClick = { globalSettingsViewModel.discardChanges() },
+                tone = ButtonTone.Neutral,
                 enabled = globalSettingsViewModel.isDirty && !globalSettingsViewModel.saving,
                 modifier = Modifier.weight(1f)
-            ) {
-                Text(stringResource(R.string.settings_discard))
-            }
-            FilledTonalButton(
+            )
+            AppButton(
+                text = stringResource(R.string.settings_save_cd),
                 onClick = {
                     globalSettingsViewModel.save { _ ->
                         globalSettingsViewModel.load(titleId = null, force = true)
                         sessionViewModel.showStatusMessage(activity.getString(R.string.emulation_settings_saved))
                     }
                 },
+                icon = Icons.Default.Save,
                 enabled = globalSettingsViewModel.isDirty && !globalSettingsViewModel.saving,
                 modifier = Modifier.weight(1f)
-            ) {
-                Icon(Icons.Default.Save, contentDescription = null)
-                Spacer(modifier = Modifier.padding(horizontal = 4.dp))
-                Text(stringResource(R.string.settings_save_cd))
-            }
+            )
         }
 
         ControllerMappingSections(
@@ -876,44 +750,34 @@ private fun EmbeddedSettingsTab(
             return@Column
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            FilterChip(
-                selected = activeScope == PauseSettingsScope.Global,
-                onClick = { activeScope = PauseSettingsScope.Global },
-                colors = settingsFilterChipColors(),
-                label = { Text(stringResource(R.string.settings_title)) }
-            )
-            FilterChip(
-                selected = activeScope == PauseSettingsScope.CustomConfig,
-                onClick = { activeScope = PauseSettingsScope.CustomConfig },
-                colors = settingsFilterChipColors(),
-                label = { Text(stringResource(R.string.emulation_custom_config)) }
-            )
-        }
+        Segmented(
+            options = listOf(
+                null to stringResource(R.string.settings_title),
+                null to stringResource(R.string.emulation_custom_config)
+            ),
+            selectedIndex = if (activeScope == PauseSettingsScope.Global) 0 else 1,
+            onSelect = { activeScope = if (it == 0) PauseSettingsScope.Global else PauseSettingsScope.CustomConfig },
+            modifier = Modifier.fillMaxWidth()
+        )
 
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            OutlinedButton(
+            AppButton(
+                text = stringResource(R.string.settings_discard),
                 onClick = { activeViewModel.discardChanges() },
+                tone = ButtonTone.Neutral,
                 enabled = activeViewModel.isDirty && !activeViewModel.saving,
                 modifier = Modifier.weight(1f)
-            ) {
-                Text(stringResource(R.string.settings_discard))
-            }
-            FilledTonalButton(
+            )
+            AppButton(
+                text = stringResource(R.string.settings_save_cd),
                 onClick = ::saveActiveSettings,
+                icon = Icons.Default.Save,
                 enabled = activeViewModel.isDirty && !activeViewModel.saving,
                 modifier = Modifier.weight(1f)
-            ) {
-                Icon(Icons.Default.Save, contentDescription = null)
-                Spacer(modifier = Modifier.padding(horizontal = 4.dp))
-                Text(stringResource(R.string.settings_save_cd))
-            }
+            )
         }
 
         if (activeScope == PauseSettingsScope.CustomConfig) {
@@ -925,15 +789,12 @@ private fun EmbeddedSettingsTab(
                         R.string.emulation_custom_config_inactive
                     }
                 ),
-                color = if (settingsViewModel.hasCustomConfig) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                }
+                color = if (settingsViewModel.hasCustomConfig) Mocha.Lavender else Mocha.Subtext0
             )
         }
 
         SettingsCategoryStrip(
+            contentPadding = PaddingValues(0.dp),
             categories = categories,
             selectedCategory = selectedCategory,
             onCategorySelected = {

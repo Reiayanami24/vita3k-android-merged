@@ -1,77 +1,108 @@
 package org.vita3k.emulator.ui.screens
 
-import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.view.Gravity
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ChecklistRtl
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.EmojiEvents
-import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SystemUpdate
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.*
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.WavingHand
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.graphics.asImageBitmap
+import android.graphics.BitmapFactory
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import coil.compose.AsyncImage
 import org.vita3k.emulator.R
-import org.vita3k.emulator.data.FirmwareInstallState
 import org.vita3k.emulator.data.AppInfo
 import org.vita3k.emulator.data.FirmwareComponent
+import org.vita3k.emulator.data.FirmwareInstallState
 import org.vita3k.emulator.data.SortOption
 import org.vita3k.emulator.data.UpdateCheckResult
 import org.vita3k.emulator.data.UpdateCheckStatus
 import org.vita3k.emulator.data.ViewMode
+import org.vita3k.emulator.ui.components.ActionRow
+import org.vita3k.emulator.ui.components.AppButton
+import org.vita3k.emulator.ui.components.AppDialog
+import org.vita3k.emulator.ui.components.AppProgressBar
+import org.vita3k.emulator.ui.components.AppSheet
+import org.vita3k.emulator.ui.components.ButtonTone
+import org.vita3k.emulator.ui.components.CompatLabel
+import org.vita3k.emulator.ui.components.DialogAction
+import org.vita3k.emulator.ui.components.EmptyState
+import org.vita3k.emulator.ui.components.EyebrowLabel
 import org.vita3k.emulator.ui.components.HtmlText
-import org.vita3k.emulator.ui.theme.ApplyDialogDim
-import org.vita3k.emulator.ui.theme.SCRIM_ALPHA
+import org.vita3k.emulator.ui.components.Panel
+import org.vita3k.emulator.ui.components.SearchField
+import org.vita3k.emulator.ui.components.Segmented
+import org.vita3k.emulator.ui.components.Tag
+import org.vita3k.emulator.ui.components.ToolbarButton
+import org.vita3k.emulator.ui.theme.Mocha
+import org.vita3k.emulator.ui.theme.MonoMedium
+import org.vita3k.emulator.ui.theme.MonoSmall
 import org.vita3k.emulator.ui.viewmodel.AppAction
 import org.vita3k.emulator.ui.viewmodel.AppActionGroup
-import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.res.stringResource
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -113,187 +144,138 @@ fun AppsListScreen(
     onOpenWelcomeScreen: () -> Unit = {},
     onOpenCustomConfig: (AppInfo) -> Unit = {}
 ) {
-    var showSearchBar by remember { mutableStateOf(false) }
     var showFilterSheet by remember { mutableStateOf(false) }
-    var showOverflowMenu by remember { mutableStateOf(false) }
+    var showMenuSheet by remember { mutableStateOf(false) }
     var showAboutSheet by remember { mutableStateOf(false) }
     var selectedAppForActions by remember { mutableStateOf<AppInfo?>(null) }
     var actionTargetApp by remember { mutableStateOf<AppInfo?>(null) }
     var pendingAction by remember { mutableStateOf<AppAction?>(null) }
+    var runningAction by remember { mutableStateOf<AppAction?>(null) }
     var showBatchDeleteConfirm by remember { mutableStateOf(false) }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        floatingActionButton = {
-            FloatingActionButton(onClick = onInstallClick) {
-                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.apps_list_cd_install))
-            }
-        },
-        topBar = {
-            if (showSearchBar) {
-                SearchBar(
-                    query = searchQuery,
-                    onQueryChange = onSearchChanged,
-                    onClose = {
-                        showSearchBar = false
-                        onSearchChanged("")
-                    }
+    val openActions: (AppInfo) -> Unit = {
+        selectedAppForActions = it
+        onPrepareAppActions(it)
+    }
+    // the most recently played game gets a shortcut above the library while nothing is filtering it
+    val resumeApp = remember(apps, searchQuery, selectionMode) {
+        if (searchQuery.isNotEmpty() || selectionMode) null else apps.filter { it.lastPlayed > 0 }.maxByOrNull { it.lastPlayed }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+        ) {
+            if (selectionMode) {
+                SelectionHeader(
+                    count = selectedAppIds.size,
+                    onExit = { onSetSelectionMode(false) },
+                    onSelectAll = onSelectAllVisible,
+                    onDelete = { showBatchDeleteConfirm = true }
                 )
             } else {
-                TopAppBar(
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        titleContentColor = MaterialTheme.colorScheme.onSurface,
-                        actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        navigationIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    ),
-                    title = {
-                        if (selectionMode) {
-                            Text(pluralStringResource(R.plurals.apps_list_n_selected, selectedAppIds.size, selectedAppIds.size))
-                        } else {
-                            AppsListTitle(appVersion = appVersion)
-                        }
-                    },
-                    navigationIcon = {
-                        if (selectionMode) {
-                            IconButton(onClick = { onSetSelectionMode(false) }) {
-                                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.apps_list_cd_exit_selection))
-                            }
-                        }
-                    },
-                    actions = {
-                        if (selectionMode) {
-                            IconButton(onClick = onSelectAllVisible) {
-                                Icon(Icons.Default.Check, contentDescription = stringResource(R.string.apps_list_cd_select_all))
-                            }
-                            IconButton(
-                                enabled = selectedAppIds.isNotEmpty(),
-                                onClick = { showBatchDeleteConfirm = true }
-                            ) {
-                                Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.apps_list_cd_delete_selected))
-                            }
-                        } else {
-                            IconButton(onClick = { showSearchBar = true }) {
-                                Icon(Icons.Default.Search, contentDescription = stringResource(R.string.apps_list_cd_search))
-                            }
-                            IconButton(onClick = onOpenSettings) {
-                                Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.settings_cd_open))
-                            }
-                            IconButton(onClick = { showFilterSheet = true }) {
-                                Icon(Icons.Default.FilterList, contentDescription = stringResource(R.string.filter_cd_open))
-                            }
-                            AppsListOverflowMenu(
-                                expanded = showOverflowMenu,
-                                onExpandedChange = { showOverflowMenu = it },
-                                onRefresh = {
-                                    showOverflowMenu = false
-                                    onRefresh()
-                                },
-                                onTrophyManager = {
-                                    showOverflowMenu = false
-                                    onOpenTrophyManager()
-                                },
-                                onUserManagement = {
-                                    showOverflowMenu = false
-                                    onOpenUserManagement()
-                                },
-                                onWelcomeScreen = {
-                                    showOverflowMenu = false
-                                    onOpenWelcomeScreen()
-                                },
-                                onCheckForUpdates = {
-                                    showOverflowMenu = false
-                                    onCheckForUpdates()
-                                },
-                                onAbout = {
-                                    showOverflowMenu = false
-                                    showAboutSheet = true
-                                }
-                            )
-                        }
-                    }
+                LibraryHeader(
+                    appVersion = appVersion,
+                    appCount = apps.size,
+                    searchQuery = searchQuery,
+                    viewMode = viewMode,
+                    onSearchChanged = onSearchChanged,
+                    onOpenSort = { showFilterSheet = true },
+                    onViewModeToggle = onViewModeToggle,
+                    onOpenSettings = onOpenSettings,
+                    onOpenMenu = { showMenuSheet = true }
                 )
             }
-        }
-    ) { padding ->
-        when {
-            loading && apps.isEmpty() -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
-                }
-            }
-            !initialized -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(stringResource(R.string.apps_list_init_failed))
-                }
-            }
-            apps.isEmpty() -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-                    contentAlignment = Alignment.Center
-                ) {
-                    when {
-                        searchQuery.isNotEmpty() -> {
-                            AppsEmptyState(
-                                title = stringResource(R.string.apps_list_empty_search, searchQuery)
-                            )
+
+            Box(modifier = Modifier.weight(1f)) {
+                when {
+                    loading && apps.isEmpty() -> {
+                        CircularProgressIndicator(
+                            color = Mocha.Mauve,
+                            trackColor = Mocha.Surface0,
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+                    }
+                    !initialized -> {
+                        EmptyState(
+                            icon = Icons.Default.Memory,
+                            title = stringResource(R.string.apps_list_init_failed),
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+                    }
+                    apps.isEmpty() -> {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            when {
+                                searchQuery.isNotEmpty() -> EmptyState(
+                                    icon = Icons.Default.SearchOff,
+                                    title = stringResource(R.string.apps_list_empty_search, searchQuery)
+                                )
+                                !firmwareInstallState.hasRequiredComponents -> FirmwareMissingEmptyState(
+                                    firmwareInstallState = firmwareInstallState,
+                                    onInstallClick = onInstallClick
+                                )
+                                else -> EmptyState(
+                                    icon = Icons.Default.Inventory2,
+                                    title = stringResource(R.string.apps_list_empty_no_apps),
+                                    body = stringResource(R.string.library_empty_body)
+                                ) {
+                                    AppButton(
+                                        text = stringResource(R.string.apps_list_install_app),
+                                        icon = Icons.Default.Add,
+                                        onClick = onInstallClick
+                                    )
+                                }
+                            }
                         }
-                        !firmwareInstallState.hasRequiredComponents -> {
-                            FirmwareMissingEmptyState(
-                                firmwareInstallState = firmwareInstallState,
-                                onInstallClick = onInstallClick
-                            )
+                    }
+                    else -> {
+                        val onClick: (AppInfo) -> Unit = { app ->
+                            if (selectionMode) onToggleAppSelection(app) else onAppSelected(app)
                         }
-                        else -> {
-                            AppsEmptyState(
-                                title = stringResource(R.string.apps_list_empty_no_apps),
-                                actionLabel = stringResource(R.string.apps_list_install_app),
-                                onAction = onInstallClick
+                        val onLongClick: (AppInfo) -> Unit = { app ->
+                            if (selectionMode) onToggleAppSelection(app) else openActions(app)
+                        }
+                        when (viewMode) {
+                            ViewMode.GRID -> LibraryGrid(
+                                apps = apps,
+                                resumeApp = resumeApp,
+                                selectionMode = selectionMode,
+                                selectedAppIds = selectedAppIds,
+                                onClick = onClick,
+                                onLongClick = onLongClick,
+                                onPlay = onAppSelected
+                            )
+                            ViewMode.LIST -> LibraryList(
+                                apps = apps,
+                                resumeApp = resumeApp,
+                                selectionMode = selectionMode,
+                                selectedAppIds = selectedAppIds,
+                                onClick = onClick,
+                                onLongClick = onLongClick,
+                                onPlay = onAppSelected
                             )
                         }
                     }
                 }
             }
-            else -> {
-                when (viewMode) {
-                    ViewMode.LIST -> AppsListView(
-                        apps = apps,
-                        onAppSelected = onAppSelected,
-                        selectedAppIds = selectedAppIds,
-                        selectionMode = selectionMode,
-                        onSelectionClick = { onToggleAppSelection(it) },
-                        onActionLongPress = {
-                            selectedAppForActions = it
-                            onPrepareAppActions(it)
-                        },
-                        modifier = Modifier.padding(padding)
-                    )
-                    ViewMode.GRID -> AppsGridView(
-                        apps = apps,
-                        onAppSelected = onAppSelected,
-                        selectedAppIds = selectedAppIds,
-                        selectionMode = selectionMode,
-                        onSelectionClick = { onToggleAppSelection(it) },
-                        onActionLongPress = {
-                            selectedAppForActions = it
-                            onPrepareAppActions(it)
-                        },
-                        modifier = Modifier.padding(padding)
-                    )
-                }
-            }
+        }
+
+        AnimatedVisibility(
+            visible = !selectionMode,
+            enter = fadeIn() + scaleIn(initialScale = 0.9f),
+            exit = fadeOut() + scaleOut(targetScale = 0.9f),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .navigationBarsPadding()
+                .padding(20.dp)
+        ) {
+            InstallButton(onClick = onInstallClick)
         }
     }
 
@@ -307,6 +289,19 @@ fun AppsListScreen(
         )
     }
 
+    if (showMenuSheet) {
+        LibraryMenuSheet(
+            onDismiss = { showMenuSheet = false },
+            onSelect = { onSetSelectionMode(true) },
+            onRefresh = onRefresh,
+            onTrophyManager = onOpenTrophyManager,
+            onUserManagement = onOpenUserManagement,
+            onWelcomeScreen = onOpenWelcomeScreen,
+            onCheckForUpdates = onCheckForUpdates,
+            onAbout = { showAboutSheet = true }
+        )
+    }
+
     if (showAboutSheet) {
         AboutSheet(
             appVersion = appVersion,
@@ -315,10 +310,14 @@ fun AppsListScreen(
     }
 
     selectedAppForActions?.let { app ->
-        AppActionsDialog(
+        AppActionsSheet(
             app = app,
             availableActions = resolveAvailableActions(app),
             onDismiss = { selectedAppForActions = null },
+            onPlay = {
+                selectedAppForActions = null
+                onAppSelected(app)
+            },
             onActionSelected = { action ->
                 actionTargetApp = app
                 selectedAppForActions = null
@@ -331,283 +330,115 @@ fun AppsListScreen(
             onCustomConfig = {
                 selectedAppForActions = null
                 onOpenCustomConfig(app)
+            },
+            onSelect = {
+                selectedAppForActions = null
+                onSetSelectionMode(true)
+                onToggleAppSelection(app)
             }
         )
     }
 
     if (showBatchDeleteConfirm) {
-        AlertDialog(
-            onDismissRequest = { showBatchDeleteConfirm = false },
-            title = { Text(pluralStringResource(R.plurals.batch_delete_title, selectedAppIds.size, selectedAppIds.size)) },
-            text = {
-                ApplyDialogDim()
-                Text(pluralStringResource(R.plurals.batch_delete_message, selectedAppIds.size, selectedAppIds.size))
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        onRunBatchDeleteSelected()
-                        showBatchDeleteConfirm = false
-                    }
-                ) {
-                    Text(stringResource(R.string.action_delete), color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showBatchDeleteConfirm = false }) {
-                    Text(stringResource(R.string.action_cancel))
-                }
-            }
-        )
+        AppDialog(
+            title = pluralStringResource(R.plurals.batch_delete_title, selectedAppIds.size, selectedAppIds.size),
+            onDismiss = { showBatchDeleteConfirm = false },
+            actions = listOf(
+                DialogAction(stringResource(R.string.action_cancel), { showBatchDeleteConfirm = false }),
+                DialogAction(stringResource(R.string.action_delete), {
+                    onRunBatchDeleteSelected()
+                    showBatchDeleteConfirm = false
+                }, ButtonTone.Danger)
+            )
+        ) {
+            Text(pluralStringResource(R.plurals.batch_delete_message, selectedAppIds.size, selectedAppIds.size))
+        }
     }
 
     val action = pendingAction
     if (action != null) {
         val actionLabel = stringResource(action.labelResId)
-        AlertDialog(
-            onDismissRequest = { pendingAction = null },
-            title = {
-                Text(
-                    if (action.destructive) stringResource(R.string.confirm_delete_title, actionLabel)
-                    else stringResource(R.string.confirm_reset_playtime_title)
+        val dismiss = {
+            pendingAction = null
+            actionTargetApp = null
+        }
+        AppDialog(
+            title = if (action.destructive) stringResource(R.string.confirm_delete_title, actionLabel)
+            else stringResource(R.string.confirm_reset_playtime_title),
+            onDismiss = dismiss,
+            actions = listOf(
+                DialogAction(
+                    if (action.destructive) stringResource(R.string.action_cancel) else stringResource(R.string.action_no),
+                    dismiss
+                ),
+                DialogAction(
+                    if (action.destructive) stringResource(R.string.action_delete) else stringResource(R.string.action_yes),
+                    {
+                        actionTargetApp?.let { onRunAppAction(it, action) }
+                        runningAction = action
+                        dismiss()
+                    },
+                    if (action.destructive) ButtonTone.Danger else ButtonTone.Accent
                 )
-            },
-            text = {
-                ApplyDialogDim()
-                Text(
-                    if (action.destructive)
-                        stringResource(R.string.confirm_delete_message, actionLabel)
-                    else
-                        stringResource(
-                            R.string.confirm_reset_playtime_message,
-                            actionTargetApp?.title ?: stringResource(R.string.confirm_reset_playtime_this_app)
-                        )
+            )
+        ) {
+            Text(
+                if (action.destructive) stringResource(R.string.confirm_delete_message, actionLabel)
+                else stringResource(
+                    R.string.confirm_reset_playtime_message,
+                    actionTargetApp?.title ?: stringResource(R.string.confirm_reset_playtime_this_app)
                 )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val app = actionTargetApp
-                        if (app != null) onRunAppAction(app, action)
-                        pendingAction = null
-                        actionTargetApp = null
-                    }
-                ) {
-                    Text(
-                        if (action.destructive) stringResource(R.string.action_delete) else stringResource(R.string.action_yes),
-                        color = if (action.destructive) MaterialTheme.colorScheme.error
-                                else MaterialTheme.colorScheme.primary
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    pendingAction = null
-                    actionTargetApp = null
-                }) {
-                    Text(if (action.destructive) stringResource(R.string.action_cancel) else stringResource(R.string.action_no))
-                }
-            }
-        )
+            )
+        }
     }
 
+    LaunchedEffect(actionInProgress) {
+        if (!actionInProgress) runningAction = null
+    }
     if (actionInProgress) {
-        AlertDialog(
-            onDismissRequest = {},
-            title = {
-                Text(
-                    if (pendingAction != null)
-                        stringResource(R.string.action_deleting, stringResource(pendingAction!!.labelResId))
-                    else
-                        stringResource(R.string.action_applying)
-                )
-            },
-            text = {
-                ApplyDialogDim()
-                Column {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                }
-            },
-            confirmButton = {}
-        )
+        AppDialog(
+            title = runningAction?.takeIf { it.destructive }?.let { stringResource(R.string.action_deleting, stringResource(it.labelResId)) }
+                ?: stringResource(R.string.action_applying),
+            onDismiss = {},
+            dismissible = false
+        ) {
+            AppProgressBar()
+        }
     }
 
     actionResultMessage?.let { message ->
-        AlertDialog(
-            onDismissRequest = onDismissActionResult,
-            title = { Text(stringResource(R.string.action_done)) },
-            text = {
-                ApplyDialogDim()
-                Text(message)
-            },
-            confirmButton = {
-                TextButton(onClick = onDismissActionResult) {
-                    Text(stringResource(R.string.action_ok))
-                }
-            }
-        )
+        AppDialog(
+            title = stringResource(R.string.action_done),
+            onDismiss = onDismissActionResult,
+            actions = listOf(DialogAction(stringResource(R.string.action_ok), onDismissActionResult, ButtonTone.Accent))
+        ) {
+            Text(message)
+        }
     }
 
     updateCheckResult?.let { result ->
-        UpdateCheckDialog(
-            result = result,
-            onDismiss = onDismissUpdateCheckResult
-        )
+        UpdateCheckDialog(result = result, onDismiss = onDismissUpdateCheckResult)
     }
 
     if (updateCheckInProgress) {
-        AlertDialog(
-            onDismissRequest = {},
-            title = { Text(stringResource(R.string.updates_check_title)) },
-            text = {
-                ApplyDialogDim()
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(stringResource(R.string.updates_check_progress))
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                }
-            },
-            confirmButton = {}
-        )
+        AppDialog(
+            title = stringResource(R.string.updates_check_title),
+            onDismiss = {},
+            dismissible = false
+        ) {
+            Text(stringResource(R.string.updates_check_progress))
+            AppProgressBar()
+        }
     }
 }
+
+// ---- Header -------------------------------------------------------------------------------------
 
 private data class ParsedAppVersion(
     val versionLabel: String,
     val buildNumber: String? = null,
     val revision: String? = null
 )
-
-private const val ABOUT_DESCRIPTION_HTML =
-    """Vita3K is the world's first functional PS Vita and PS TV emulator, open source and written in C++ for Windows, Linux, macOS, and Android. Visit <a href="https://vita3k.org/quickstart.html">vita3k.org</a> for more info, browse the project on <a href="https://github.com/Vita3K/Vita3K">GitHub</a> if you want to contribute, or support us on <a href="https://ko-fi.com/vita3k">Ko-fi</a>."""
-
-private const val ABOUT_CREDIT_HTML =
-    """Icon by <a href="https://gordonmackayillustration.blogspot.com">Gordon Mackay</a>."""
-
-private const val ABOUT_FOOTER_HTML =
-    """<a href="https://vita3k.org">Website</a> | <a href="https://github.com/Vita3K/Vita3K">GitHub</a> | <a href="https://ko-fi.com/vita3k">Ko-fi</a> | <a href="https://discord.com/invite/6aGwQzh">Discord</a>"""
-
-@Composable
-private fun AppsEmptyState(
-    title: String,
-    body: String? = null,
-    actionLabel: String? = null,
-    onAction: (() -> Unit)? = null
-) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp)
-            .widthIn(max = 440.dp),
-        shape = RoundedCornerShape(28.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 28.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.headlineSmall,
-                textAlign = TextAlign.Center
-            )
-            body?.takeIf { it.isNotBlank() }?.let {
-                Text(
-                    text = it,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
-                )
-            }
-            if (actionLabel != null && onAction != null) {
-                FilledTonalButton(
-                    onClick = onAction,
-                    colors = ButtonDefaults.filledTonalButtonColors()
-                ) {
-                    Text(actionLabel)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun FirmwareMissingEmptyState(
-    firmwareInstallState: FirmwareInstallState,
-    onInstallClick: () -> Unit
-) {
-    val missingLabels = remember(firmwareInstallState) {
-        firmwareInstallState.components.missingRequiredComponentsInOrder.map(::firmwareComponentLabelRes)
-    }
-
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp)
-            .widthIn(max = 440.dp),
-        shape = RoundedCornerShape(28.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.94f)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 28.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.apps_list_empty_firmware_title),
-                style = MaterialTheme.typography.headlineSmall,
-                textAlign = TextAlign.Center
-            )
-            Text(
-                text = stringResource(R.string.apps_list_empty_firmware_body),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-            )
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 18.dp, vertical = 16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Text(
-                        text = stringResource(R.string.apps_list_empty_firmware_missing_list_title),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    missingLabels.forEach { labelResId ->
-                        Text(
-                            text = "\u2022 ${stringResource(labelResId)}",
-                            style = MaterialTheme.typography.bodyLarge,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-            }
-            FilledTonalButton(onClick = onInstallClick) {
-                Text(stringResource(R.string.apps_list_install_firmware))
-            }
-        }
-    }
-}
-
-private fun firmwareComponentLabelRes(component: FirmwareComponent): Int {
-    return when (component) {
-        FirmwareComponent.Preinstalled -> R.string.initial_setup_preinstall_title
-        FirmwareComponent.Main -> R.string.initial_setup_main_title
-        FirmwareComponent.FontPackage -> R.string.initial_setup_font_title
-    }
-}
 
 private fun parseAppVersion(appVersion: String): ParsedAppVersion {
     if (appVersion.isBlank()) {
@@ -623,358 +454,223 @@ private fun parseAppVersion(appVersion: String): ParsedAppVersion {
 }
 
 @Composable
-private fun AppsListTitle(appVersion: String) {
-    val parsedVersion = remember(appVersion) { parseAppVersion(appVersion) }
-    val subtitle = remember(parsedVersion) {
-        when {
-            parsedVersion.versionLabel.isBlank() -> ""
-            parsedVersion.buildNumber.isNullOrBlank() -> parsedVersion.versionLabel
-            else -> "${parsedVersion.versionLabel} (${parsedVersion.buildNumber})"
-        }
-    }
-
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(
-            text = stringResource(R.string.apps_list_app_title),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        if (subtitle.isNotBlank()) {
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
-}
-
-@Composable
-private fun AppsListOverflowMenu(
-    expanded: Boolean,
-    onExpandedChange: (Boolean) -> Unit,
-    onRefresh: () -> Unit,
-    onTrophyManager: () -> Unit,
-    onUserManagement: () -> Unit,
-    onWelcomeScreen: () -> Unit,
-    onCheckForUpdates: () -> Unit,
-    onAbout: () -> Unit
-) {
-    Box {
-        IconButton(onClick = { onExpandedChange(true) }) {
-            Icon(
-                imageVector = Icons.Default.MoreVert,
-                contentDescription = stringResource(R.string.apps_list_cd_more_options)
-            )
-        }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { onExpandedChange(false) }
-        ) {
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.apps_list_cd_refresh)) },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = null
-                    )
-                },
-                onClick = onRefresh
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.apps_list_menu_trophies)) },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.EmojiEvents,
-                        contentDescription = null
-                    )
-                },
-                onClick = onTrophyManager
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.apps_list_menu_users)) },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = null
-                    )
-                },
-                onClick = onUserManagement
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.apps_list_menu_welcome)) },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Info,
-                        contentDescription = null
-                    )
-                },
-                onClick = onWelcomeScreen
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.apps_list_menu_check_updates)) },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.SystemUpdate,
-                        contentDescription = null
-                    )
-                },
-                onClick = onCheckForUpdates
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.apps_list_menu_about)) },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Info,
-                        contentDescription = null
-                    )
-                },
-                onClick = onAbout
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SearchBar(
-    query: String,
-    onQueryChange: (String) -> Unit,
-    onClose: () -> Unit
-) {
-    val focusRequester = remember { FocusRequester() }
-    val keyboardController = LocalSoftwareKeyboardController.current
-
-    LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
-        keyboardController?.show()
-    }
-
-    TopAppBar(
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-            navigationIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
-        ),
-        title = {
-            TextField(
-                value = query,
-                onValueChange = onQueryChange,
-                placeholder = { Text(stringResource(R.string.apps_list_search_placeholder)) },
-                singleLine = true,
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(focusRequester)
-            )
-        },
-        navigationIcon = {
-            IconButton(onClick = {
-                keyboardController?.hide()
-                onClose()
-            }) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.apps_list_cd_close_search))
-            }
-        }
-    )
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AboutSheet(
+private fun LibraryHeader(
     appVersion: String,
-    onDismiss: () -> Unit
+    appCount: Int,
+    searchQuery: String,
+    viewMode: ViewMode,
+    onSearchChanged: (String) -> Unit,
+    onOpenSort: () -> Unit,
+    onViewModeToggle: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenMenu: () -> Unit
 ) {
-    val parsedVersion = remember(appVersion) { parseAppVersion(appVersion) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        scrimColor = Color.Black.copy(alpha = SCRIM_ALPHA)
+    val version = remember(appVersion) { parseAppVersion(appVersion) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 28.dp, vertical = 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Image(
-                painter = painterResource(id = R.mipmap.ic_launcher_plus),
-                contentDescription = stringResource(R.string.apps_list_app_title),
-                modifier = Modifier
-                    .size(132.dp)
-                    .alpha(0.94f)
-            )
-
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Text(
-                    text = stringResource(R.string.apps_list_app_title),
-                    style = MaterialTheme.typography.headlineLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center
-                )
-                if (parsedVersion.versionLabel.isNotBlank()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = parsedVersion.versionLabel,
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center
+                        stringResource(R.string.apps_list_app_title),
+                        style = MonoSmall,
+                        color = Mocha.Mauve
                     )
-                }
-                parsedVersion.buildNumber?.let { build ->
-                    Text(
-                        text = stringResource(R.string.about_build, build),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                parsedVersion.revision?.let { revision ->
-                    Text(
-                        text = stringResource(R.string.about_revision, revision),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            HtmlText(
-                html = ABOUT_DESCRIPTION_HTML,
-                modifier = Modifier.fillMaxWidth(),
-                textStyle = MaterialTheme.typography.bodyLarge,
-                gravity = Gravity.CENTER
-            )
-            HtmlText(
-                html = ABOUT_CREDIT_HTML,
-                modifier = Modifier.fillMaxWidth(),
-                textStyle = MaterialTheme.typography.bodySmall,
-                textColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                gravity = Gravity.CENTER
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Text(
-                text = stringResource(R.string.about_legal_notice),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.error,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            HtmlText(
-                html = ABOUT_FOOTER_HTML,
-                modifier = Modifier.fillMaxWidth(),
-                textStyle = MaterialTheme.typography.titleMedium,
-                gravity = Gravity.CENTER
-            )
-
-            Spacer(modifier = Modifier.height(18.dp))
-        }
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun AppsListView(
-    apps: List<AppInfo>,
-    onAppSelected: (AppInfo) -> Unit,
-    selectedAppIds: Set<String>,
-    selectionMode: Boolean,
-    onSelectionClick: (AppInfo) -> Unit,
-    onActionLongPress: (AppInfo) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    LazyColumn(modifier = modifier.fillMaxSize()) {
-        items(apps, key = { it.titleId }) { app ->
-            val haptic = LocalHapticFeedback.current
-            ListItem(
-                headlineContent = {
-                    Text(app.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                },
-                supportingContent = {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(app.titleId)
-                        AppStatusBadges(app)
-                    }
-                },
-                leadingContent = {
-                    AppIcon(app, size = 48)
-                },
-                trailingContent = {
-                    if (selectionMode && selectedAppIds.contains(app.titleId)) {
-                        Icon(
-                            imageVector = Icons.Default.Check,
-                            contentDescription = stringResource(R.string.apps_list_cd_selected),
-                            tint = MaterialTheme.colorScheme.primary
+                    if (version.versionLabel.isNotBlank()) {
+                        Text(
+                            listOfNotNull(version.versionLabel, version.buildNumber?.let { "#$it" }).joinToString(" "),
+                            style = MonoSmall,
+                            color = Mocha.Overlay1
                         )
                     }
-                },
-                colors = ListItemDefaults.colors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    headlineColor = MaterialTheme.colorScheme.onSurface,
-                    supportingColor = MaterialTheme.colorScheme.onSurfaceVariant
-                ),
-                modifier = Modifier.combinedClickable(
-                    onClick = {
-                        if (selectionMode) onSelectionClick(app) else onAppSelected(app)
-                    },
-                    onLongClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        if (selectionMode) onSelectionClick(app) else onActionLongPress(app)
+                }
+                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        stringResource(R.string.library_title),
+                        style = MaterialTheme.typography.headlineLarge,
+                        color = Mocha.Text
+                    )
+                    if (appCount > 0) {
+                        Text(
+                            appCount.toString(),
+                            style = MonoMedium,
+                            color = Mocha.Overlay1,
+                            modifier = Modifier.padding(bottom = 5.dp)
+                        )
                     }
+                }
+            }
+            ToolbarButton(Icons.Default.Settings, stringResource(R.string.settings_cd_open), onOpenSettings)
+            ToolbarButton(Icons.Default.MoreHoriz, stringResource(R.string.apps_list_cd_more_options), onOpenMenu)
+        }
+        Row(
+            modifier = Modifier.padding(end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            SearchField(
+                query = searchQuery,
+                onQueryChange = onSearchChanged,
+                placeholder = stringResource(R.string.apps_list_search_placeholder),
+                clearDescription = stringResource(R.string.apps_list_cd_close_search),
+                modifier = Modifier.weight(1f)
+            )
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Mocha.Surface0.copy(alpha = 0.7f))
+            ) {
+                ToolbarButton(
+                    Icons.AutoMirrored.Filled.Sort,
+                    stringResource(R.string.apps_list_cd_sort),
+                    onOpenSort,
+                    modifier = Modifier.align(Alignment.Center)
                 )
+            }
+            Segmented(
+                options = listOf(
+                    Icons.Default.GridView to stringResource(R.string.filter_view_grid),
+                    Icons.AutoMirrored.Filled.List to stringResource(R.string.filter_view_list)
+                ),
+                selectedIndex = if (viewMode == ViewMode.GRID) 0 else 1,
+                onSelect = { index ->
+                    val wanted = if (index == 0) ViewMode.GRID else ViewMode.LIST
+                    if (wanted != viewMode) onViewModeToggle()
+                },
+                iconsOnly = true
             )
         }
     }
 }
 
 @Composable
-private fun AppsGridView(
+private fun SelectionHeader(
+    count: Int,
+    onExit: () -> Unit,
+    onSelectAll: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 12.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(Mocha.Mauve.copy(alpha = 0.12f))
+            .padding(horizontal = 4.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        ToolbarButton(Icons.Default.Close, stringResource(R.string.apps_list_cd_exit_selection), onExit, tint = Mocha.Mauve)
+        Text(
+            pluralStringResource(R.plurals.apps_list_n_selected, count, count),
+            style = MaterialTheme.typography.titleMedium,
+            color = Mocha.Mauve,
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 4.dp)
+        )
+        ToolbarButton(Icons.Default.DoneAll, stringResource(R.string.apps_list_cd_select_all), onSelectAll, tint = Mocha.Mauve)
+        ToolbarButton(
+            Icons.Default.Delete,
+            stringResource(R.string.apps_list_cd_delete_selected),
+            onDelete,
+            enabled = count > 0,
+            tint = Mocha.Red
+        )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun InstallButton(onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .height(52.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(Mocha.Mauve)
+            .combinedClickable(onClick = onClick)
+            .padding(start = 16.dp, end = 20.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Icon(Icons.Default.Add, contentDescription = null, tint = Mocha.Crust)
+        Text(stringResource(R.string.apps_list_cd_install), style = MaterialTheme.typography.titleSmall, color = Mocha.Crust)
+    }
+}
+
+// ---- Library ------------------------------------------------------------------------------------
+
+private val LibraryBottomPadding = 104.dp
+
+@Composable
+private fun LibraryGrid(
     apps: List<AppInfo>,
-    onAppSelected: (AppInfo) -> Unit,
-    selectedAppIds: Set<String>,
+    resumeApp: AppInfo?,
     selectionMode: Boolean,
-    onSelectionClick: (AppInfo) -> Unit,
-    onActionLongPress: (AppInfo) -> Unit,
-    modifier: Modifier = Modifier
+    selectedAppIds: Set<String>,
+    onClick: (AppInfo) -> Unit,
+    onLongClick: (AppInfo) -> Unit,
+    onPlay: (AppInfo) -> Unit
 ) {
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 120.dp),
-        contentPadding = PaddingValues(8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = modifier.fillMaxSize()
+        columns = GridCells.Adaptive(minSize = 112.dp),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = LibraryBottomPadding),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
+        modifier = Modifier.fillMaxSize()
     ) {
+        if (resumeApp != null) {
+            item(key = "resume", span = { GridItemSpan(maxLineSpan) }) {
+                ResumeCard(app = resumeApp, onPlay = { onPlay(resumeApp) }, onLongClick = { onLongClick(resumeApp) })
+            }
+        }
         items(apps, key = { it.titleId }) { app ->
-            AppGridItem(
+            GameTile(
                 app = app,
-                selected = selectedAppIds.contains(app.titleId),
+                selected = app.titleId in selectedAppIds,
                 selectionMode = selectionMode,
-                onClick = {
-                    if (selectionMode) onSelectionClick(app) else onAppSelected(app)
-                },
-                onLongClick = {
-                    if (selectionMode) onSelectionClick(app) else onActionLongPress(app)
-                }
+                onClick = { onClick(app) },
+                onLongClick = { onLongClick(app) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun LibraryList(
+    apps: List<AppInfo>,
+    resumeApp: AppInfo?,
+    selectionMode: Boolean,
+    selectedAppIds: Set<String>,
+    onClick: (AppInfo) -> Unit,
+    onLongClick: (AppInfo) -> Unit,
+    onPlay: (AppInfo) -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = LibraryBottomPadding)
+    ) {
+        if (resumeApp != null) {
+            item(key = "resume") {
+                ResumeCard(
+                    app = resumeApp,
+                    onPlay = { onPlay(resumeApp) },
+                    onLongClick = { onLongClick(resumeApp) },
+                    modifier = Modifier.padding(start = 8.dp, end = 8.dp, bottom = 12.dp)
+                )
+            }
+        }
+        items(apps, key = { it.titleId }) { app ->
+            GameRow(
+                app = app,
+                selected = app.titleId in selectedAppIds,
+                selectionMode = selectionMode,
+                onClick = { onClick(app) },
+                onLongClick = { onLongClick(app) }
             )
         }
     }
@@ -982,7 +678,63 @@ private fun AppsGridView(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun AppGridItem(
+private fun ResumeCard(
+    app: AppInfo,
+    onPlay: () -> Unit,
+    onLongClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val haptic = LocalHapticFeedback.current
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(Mocha.Mantle)
+            .border(1.dp, Mocha.Surface0, RoundedCornerShape(20.dp))
+            .combinedClickable(
+                onClick = onPlay,
+                onLongClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onLongClick()
+                }
+            )
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        AppIcon(app = app, size = 76, cornerRadius = 14.dp)
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            EyebrowLabel(stringResource(R.string.library_resume), color = Mocha.Mauve)
+            Text(
+                app.title,
+                style = MaterialTheme.typography.titleMedium,
+                color = Mocha.Text,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                listOfNotNull(app.titleId, formatPlaytimeShort(app.playtime)).joinToString("  ·  "),
+                style = MonoSmall,
+                color = Mocha.Overlay1,
+                maxLines = 1
+            )
+        }
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(Mocha.Mauve)
+                .combinedClickable(onClick = onPlay),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Default.PlayArrow, contentDescription = stringResource(R.string.library_play), tint = Mocha.Crust)
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun GameTile(
     app: AppInfo,
     selected: Boolean,
     selectionMode: Boolean,
@@ -990,46 +742,376 @@ private fun AppGridItem(
     onLongClick: () -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
-    Card(
+    val shape = RoundedCornerShape(16.dp)
+    Column(
         modifier = Modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     onLongClick()
                 }
-            ),
-        shape = RoundedCornerShape(8.dp)
+            )
+            .padding(4.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Column {
-            AppIcon(app, size = 120, modifier = Modifier.fillMaxWidth())
-            Column(modifier = Modifier.padding(8.dp)) {
-                Text(
-                    app.title,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .then(
+                    if (selected) Modifier.border(2.dp, Mocha.Mauve, shape)
+                    else Modifier.border(1.dp, Mocha.Surface0, shape)
                 )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(top = 4.dp)
-                ) {
-                    AppStatusBadges(app)
-                    if (selectionMode && selected) {
-                        Icon(
-                            imageVector = Icons.Default.Check,
-                            contentDescription = stringResource(R.string.apps_list_cd_selected),
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
+                .padding(if (selected) 4.dp else 0.dp)
+        ) {
+            AppIconFill(app = app, cornerRadius = if (selected) 12.dp else 16.dp)
+            if (selectionMode) {
+                SelectionMark(selected = selected, modifier = Modifier.align(Alignment.TopEnd).padding(6.dp))
+            }
+        }
+        Text(
+            app.title,
+            style = MaterialTheme.typography.labelLarge,
+            color = Mocha.Text,
+            maxLines = 2,
+            minLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 2.dp)
+        )
+        Row(
+            modifier = Modifier.padding(horizontal = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            CompatLabel(
+                state = app.compatibility,
+                label = stringResource(app.compatibility.labelResId),
+                modifier = Modifier.weight(1f, fill = false)
+            )
+            if (app.hasCustomConfig) CustomConfigTag()
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun GameRow(
+    app: AppInfo,
+    selected: Boolean,
+    selectionMode: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
+) {
+    val haptic = LocalHapticFeedback.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (selected) Mocha.Mauve.copy(alpha = 0.10f) else Color.Transparent)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onLongClick()
                 }
+            )
+            .padding(horizontal = 8.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        AppIcon(app = app, size = 52, cornerRadius = 12.dp)
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(
+                app.title,
+                style = MaterialTheme.typography.titleSmall,
+                color = Mocha.Text,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(app.titleId, style = MonoSmall, color = Mocha.Overlay1)
+                CompatLabel(
+                    state = app.compatibility,
+                    label = stringResource(app.compatibility.labelResId),
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                if (app.hasCustomConfig) CustomConfigTag()
+            }
+        }
+        if (selectionMode) {
+            SelectionMark(selected = selected)
+        } else {
+            formatPlaytimeShort(app.playtime)?.let {
+                Text(it, style = MonoSmall, color = Mocha.Overlay1)
             }
         }
     }
 }
+
+@Composable
+private fun SelectionMark(selected: Boolean, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(24.dp)
+            .clip(CircleShape)
+            .background(if (selected) Mocha.Mauve else Mocha.Crust.copy(alpha = 0.7f))
+            .border(1.5.dp, if (selected) Mocha.Mauve else Mocha.Overlay1, CircleShape),
+        contentAlignment = Alignment.Center
+    ) {
+        if (selected) {
+            Icon(
+                Icons.Default.Check,
+                contentDescription = stringResource(R.string.apps_list_cd_selected),
+                tint = Mocha.Crust,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun CustomConfigTag() {
+    Tag(text = stringResource(R.string.apps_list_custom_config_badge), color = Mocha.Lavender)
+}
+
+private fun formatPlaytimeShort(seconds: Long): String? {
+    if (seconds < 60) return null
+    val h = seconds / 3600
+    val m = (seconds % 3600) / 60
+    return if (h > 0) "${h}h ${m}m" else "${m}m"
+}
+
+// ---- Empty states -------------------------------------------------------------------------------
+
+@Composable
+private fun FirmwareMissingEmptyState(
+    firmwareInstallState: FirmwareInstallState,
+    onInstallClick: () -> Unit
+) {
+    val missingLabels = remember(firmwareInstallState) {
+        firmwareInstallState.components.missingRequiredComponentsInOrder.map(::firmwareComponentLabelRes)
+    }
+    EmptyState(
+        icon = Icons.Default.SystemUpdate,
+        title = stringResource(R.string.apps_list_empty_firmware_title),
+        body = stringResource(R.string.apps_list_empty_firmware_body)
+    ) {
+        Panel(
+            modifier = Modifier.padding(vertical = 4.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
+            spacing = 8.dp
+        ) {
+            EyebrowLabel(stringResource(R.string.apps_list_empty_firmware_missing_list_title))
+            missingLabels.forEach { labelResId ->
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(Mocha.Peach)
+                    )
+                    Text(stringResource(labelResId), style = MaterialTheme.typography.bodyMedium, color = Mocha.Text)
+                }
+            }
+        }
+        AppButton(
+            text = stringResource(R.string.apps_list_install_firmware),
+            icon = Icons.Default.SystemUpdate,
+            onClick = onInstallClick
+        )
+    }
+}
+
+private fun firmwareComponentLabelRes(component: FirmwareComponent): Int {
+    return when (component) {
+        FirmwareComponent.Preinstalled -> R.string.initial_setup_preinstall_title
+        FirmwareComponent.Main -> R.string.initial_setup_main_title
+        FirmwareComponent.FontPackage -> R.string.initial_setup_font_title
+    }
+}
+
+// ---- Sheets -------------------------------------------------------------------------------------
+
+@Composable
+private fun LibraryMenuSheet(
+    onDismiss: () -> Unit,
+    onSelect: () -> Unit,
+    onRefresh: () -> Unit,
+    onTrophyManager: () -> Unit,
+    onUserManagement: () -> Unit,
+    onWelcomeScreen: () -> Unit,
+    onCheckForUpdates: () -> Unit,
+    onAbout: () -> Unit
+) {
+    // close the sheet before the action so a screen change does not race the sheet animation
+    fun pick(action: () -> Unit): () -> Unit = {
+        onDismiss()
+        action()
+    }
+    AppSheet(onDismiss = onDismiss) {
+        ActionRow(stringResource(R.string.apps_list_menu_trophies), pick(onTrophyManager), icon = Icons.Default.EmojiEvents, iconTint = Mocha.Yellow)
+        ActionRow(stringResource(R.string.apps_list_menu_users), pick(onUserManagement), icon = Icons.Default.People, iconTint = Mocha.Blue)
+        ActionRow(stringResource(R.string.library_select), pick(onSelect), icon = Icons.Default.ChecklistRtl, iconTint = Mocha.Mauve)
+        ActionRow(stringResource(R.string.apps_list_cd_refresh), pick(onRefresh), icon = Icons.Default.Refresh, iconTint = Mocha.Teal)
+        ActionRow(stringResource(R.string.apps_list_menu_check_updates), pick(onCheckForUpdates), icon = Icons.Default.SystemUpdate, iconTint = Mocha.Green)
+        ActionRow(stringResource(R.string.apps_list_menu_welcome), pick(onWelcomeScreen), icon = Icons.Default.WavingHand, iconTint = Mocha.Peach)
+        ActionRow(stringResource(R.string.apps_list_menu_about), pick(onAbout), icon = Icons.Default.Info, iconTint = Mocha.Lavender)
+    }
+}
+
+private const val ABOUT_DESCRIPTION_HTML =
+    """Vita3K is the world's first functional PS Vita and PS TV emulator, open source and written in C++ for Windows, Linux, macOS, and Android. Visit <a href="https://vita3k.org/quickstart.html">vita3k.org</a> for more info, browse the project on <a href="https://github.com/Vita3K/Vita3K">GitHub</a> if you want to contribute, or support us on <a href="https://ko-fi.com/vita3k">Ko-fi</a>."""
+
+private const val ABOUT_CREDIT_HTML =
+    """Icon by <a href="https://gordonmackayillustration.blogspot.com">Gordon Mackay</a>. Type set in IBM Plex. Colours from <a href="https://catppuccin.com">Catppuccin</a>."""
+
+private const val ABOUT_FOOTER_HTML =
+    """<a href="https://vita3k.org">Website</a> &nbsp;·&nbsp; <a href="https://github.com/Vita3K/Vita3K">GitHub</a> &nbsp;·&nbsp; <a href="https://ko-fi.com/vita3k">Ko-fi</a> &nbsp;·&nbsp; <a href="https://discord.com/invite/6aGwQzh">Discord</a>"""
+
+@Composable
+private fun AboutSheet(
+    appVersion: String,
+    onDismiss: () -> Unit
+) {
+    val parsedVersion = remember(appVersion) { parseAppVersion(appVersion) }
+    AppSheet(onDismiss = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Image(
+                painter = painterResource(id = R.mipmap.ic_launcher_plus),
+                contentDescription = stringResource(R.string.apps_list_app_title),
+                modifier = Modifier.size(96.dp)
+            )
+            Text(stringResource(R.string.apps_list_app_title), style = MaterialTheme.typography.headlineMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (parsedVersion.versionLabel.isNotBlank()) Tag(parsedVersion.versionLabel, Mocha.Mauve)
+                parsedVersion.buildNumber?.let { Tag(stringResource(R.string.about_build, it), Mocha.Lavender) }
+                parsedVersion.revision?.let { Tag(stringResource(R.string.about_revision, it), Mocha.Overlay2) }
+            }
+            HtmlText(
+                html = ABOUT_DESCRIPTION_HTML,
+                modifier = Modifier.fillMaxWidth(),
+                textStyle = MaterialTheme.typography.bodyMedium,
+                textColor = Mocha.Subtext1,
+                linkColor = Mocha.Mauve,
+                gravity = Gravity.CENTER
+            )
+            Text(
+                text = stringResource(R.string.about_legal_notice),
+                style = MaterialTheme.typography.bodyMedium,
+                color = Mocha.Peach,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Mocha.Peach.copy(alpha = 0.10f))
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
+            )
+            HtmlText(
+                html = ABOUT_CREDIT_HTML,
+                modifier = Modifier.fillMaxWidth(),
+                textStyle = MaterialTheme.typography.bodySmall,
+                textColor = Mocha.Overlay1,
+                linkColor = Mocha.Subtext1,
+                gravity = Gravity.CENTER
+            )
+            HtmlText(
+                html = ABOUT_FOOTER_HTML,
+                modifier = Modifier.fillMaxWidth(),
+                textStyle = MaterialTheme.typography.titleSmall,
+                textColor = Mocha.Overlay1,
+                linkColor = Mocha.Mauve,
+                gravity = Gravity.CENTER
+            )
+        }
+    }
+}
+
+@Composable
+private fun AppActionsSheet(
+    app: AppInfo,
+    availableActions: Set<AppAction>,
+    onDismiss: () -> Unit,
+    onPlay: () -> Unit,
+    onActionSelected: (AppAction) -> Unit,
+    onShowInfo: () -> Unit,
+    onCustomConfig: () -> Unit,
+    onSelect: () -> Unit
+) {
+    var showDeleteOptions by remember { mutableStateOf(false) }
+    val availableDeletes = AppAction.entries.filter { it.group == AppActionGroup.DELETE && availableActions.contains(it) }
+    val otherActions = AppAction.entries.filter { it.group == AppActionGroup.OTHER }
+
+    AppSheet(onDismiss = onDismiss) {
+        Row(
+            modifier = Modifier.padding(start = 8.dp, end = 8.dp, bottom = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            AppIcon(app = app, size = 56, cornerRadius = 12.dp)
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(app.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(app.titleId, style = MonoSmall, color = Mocha.Overlay1)
+                    CompatLabel(app.compatibility, stringResource(app.compatibility.labelResId))
+                }
+            }
+            if (!showDeleteOptions) {
+                AppButton(stringResource(R.string.library_play), onPlay, icon = Icons.Default.PlayArrow)
+            }
+        }
+
+        if (showDeleteOptions) {
+            availableDeletes.forEach { action ->
+                ActionRow(
+                    title = stringResource(action.labelResId),
+                    onClick = { onActionSelected(action) },
+                    icon = Icons.Default.Delete,
+                    tint = Mocha.Red,
+                    iconTint = Mocha.Red
+                )
+            }
+            ActionRow(
+                title = stringResource(R.string.action_back),
+                onClick = { showDeleteOptions = false },
+                icon = Icons.AutoMirrored.Filled.ArrowBack
+            )
+            return@AppSheet
+        }
+
+        ActionRow(stringResource(R.string.app_menu_information), onShowInfo, icon = Icons.Default.Info)
+        ActionRow(stringResource(R.string.app_menu_custom_config), onCustomConfig, icon = Icons.Default.Tune)
+        ActionRow(stringResource(R.string.library_select), onSelect, icon = Icons.Default.ChecklistRtl)
+        otherActions.forEach { action ->
+            ActionRow(
+                title = stringResource(action.labelResId),
+                onClick = { onActionSelected(action) },
+                icon = if (action == AppAction.RESET_LAST_PLAYED) Icons.Default.History else Icons.Default.Refresh,
+                enabled = availableActions.contains(action)
+            )
+        }
+        if (availableDeletes.isNotEmpty()) {
+            ActionRow(
+                title = stringResource(R.string.app_menu_delete),
+                onClick = { showDeleteOptions = true },
+                icon = Icons.Default.Delete,
+                tint = Mocha.Red,
+                iconTint = Mocha.Red
+            )
+        }
+    }
+}
+
+// ---- Updates ------------------------------------------------------------------------------------
 
 @Composable
 private fun UpdateCheckDialog(
@@ -1054,18 +1136,9 @@ private fun UpdateCheckDialog(
         when (result.status) {
             UpdateCheckStatus.UpdateAvailable ->
                 if (publishedAt.isBlank()) {
-                    context.getString(
-                        R.string.updates_summary_available,
-                        result.currentDisplayVersion.ifBlank { "Unknown" },
-                        latestVersion
-                    )
+                    context.getString(R.string.updates_summary_available, result.currentDisplayVersion.ifBlank { "Unknown" }, latestVersion)
                 } else {
-                    context.getString(
-                        R.string.updates_summary_available_with_date,
-                        result.currentDisplayVersion.ifBlank { "Unknown" },
-                        latestVersion,
-                        publishedAt
-                    )
+                    context.getString(R.string.updates_summary_available_with_date, result.currentDisplayVersion.ifBlank { "Unknown" }, latestVersion, publishedAt)
                 }
             UpdateCheckStatus.CustomBuildCanUpdate ->
                 if (publishedAt.isBlank()) {
@@ -1080,50 +1153,30 @@ private fun UpdateCheckDialog(
     val showDownloadAction = result.status == UpdateCheckStatus.UpdateAvailable ||
         result.status == UpdateCheckStatus.CustomBuildCanUpdate
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(titleRes)) },
-        text = {
-            ApplyDialogDim()
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 320.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(summary)
-                if (result.info.notes.isNotBlank()) {
-                    Text(
-                        text = result.info.notes,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            if (showDownloadAction) {
-                TextButton(onClick = {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl)))
-                    onDismiss()
-                }) {
-                    Text(stringResource(R.string.updates_open_download_page))
-                }
-            } else {
-                TextButton(onClick = onDismiss) {
-                    Text(stringResource(R.string.action_ok))
-                }
-            }
-        },
-        dismissButton = {
-            if (showDownloadAction) {
-                TextButton(onClick = onDismiss) {
-                    Text(stringResource(R.string.action_cancel))
-                }
+    AppDialog(
+        title = stringResource(titleRes),
+        onDismiss = onDismiss,
+        actions = if (showDownloadAction) listOf(
+            DialogAction(stringResource(R.string.action_cancel), onDismiss),
+            DialogAction(stringResource(R.string.updates_open_download_page), {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl)))
+                onDismiss()
+            }, ButtonTone.Accent)
+        ) else listOf(DialogAction(stringResource(R.string.action_ok), onDismiss, ButtonTone.Accent))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 320.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(summary)
+            if (result.info.notes.isNotBlank()) {
+                Text(result.info.notes, style = MonoSmall, color = Mocha.Subtext0)
             }
         }
-    )
+    }
 }
 
 private fun formatPublishedAt(publishedAt: String): String {
@@ -1140,211 +1193,57 @@ private fun formatPublishedAt(publishedAt: String): String {
     }.getOrElse { publishedAt }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+// ---- Shared pieces ------------------------------------------------------------------------------
+
 @Composable
-private fun AppActionsDialog(
-    app: AppInfo,
-    availableActions: Set<AppAction>,
-    onDismiss: () -> Unit,
-    onActionSelected: (AppAction) -> Unit,
-    onShowInfo: () -> Unit,
-    onCustomConfig: () -> Unit = {}
-) {
-    var showDeleteSubmenu by remember { mutableStateOf(false) }
-
-    if (showDeleteSubmenu) {
-        val availableDeletes = AppAction.entries
-            .filter { it.group == AppActionGroup.DELETE && availableActions.contains(it) }
-
-        AppMenuDialog(
-            title = app.title,
-            onDismiss = { showDeleteSubmenu = false }
-        ) {
-            availableDeletes.forEach { action ->
-                AppMenuRow(
-                    label = stringResource(action.labelResId),
-                    labelColor = MaterialTheme.colorScheme.error,
-                    onClick = {
-                        showDeleteSubmenu = false
-                        onActionSelected(action)
-                    }
-                )
-            }
-            AppMenuRow(
-                label = stringResource(R.string.action_back),
-                labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                icon = {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp)
-                    )
-                },
-                onClick = { showDeleteSubmenu = false }
-            )
-        }
-        return
-    }
-
-    val hasAnyDelete = AppAction.entries
-        .any { it.group == AppActionGroup.DELETE && availableActions.contains(it) }
-    val otherActions = AppAction.entries.filter { it.group == AppActionGroup.OTHER }
-
-    AppMenuDialog(title = app.title, onDismiss = onDismiss) {
-        // Information
-        AppMenuRow(
-            label = stringResource(R.string.app_menu_information),
-            icon = {
-                Icon(
-                    Icons.Default.Info,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp)
-                )
-            },
-            onClick = { onDismiss(); onShowInfo() }
-        )
-        // Custom Config
-        AppMenuRow(
-            label = stringResource(R.string.app_menu_custom_config),
-            icon = {
-                Icon(
-                    Icons.Default.Settings,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp)
-                )
-            },
-            onClick = { onCustomConfig() }
-        )
-
-        // Other actions (reset last played, etc.)
-        otherActions.forEach { action ->
-            val enabled = availableActions.contains(action)
-            val actionIcon: (@Composable () -> Unit)? = when (action) {
-                AppAction.RESET_LAST_PLAYED -> ({
-                    Icon(
-                        Icons.Default.History,
-                        contentDescription = null,
-                        tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
-                               else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
-                        modifier = Modifier.size(18.dp)
-                    )
-                })
-                else -> null
-            }
-            AppMenuRow(
-                label = stringResource(action.labelResId),
-                labelColor = if (enabled) MaterialTheme.colorScheme.onSurface
-                             else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
-                icon = actionIcon,
-                onClick = { if (enabled) { onActionSelected(action) } }
-            )
-        }
-
-        
-        
-        // Delete — drills into submenu
-        if (hasAnyDelete) {
-            AppMenuRow(
-                label = stringResource(R.string.app_menu_delete),
-                labelColor = MaterialTheme.colorScheme.error,
-                icon = {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(18.dp)
-                    )
-                },
-                onClick = { showDeleteSubmenu = true }
-            )
-        }
+internal fun AppIcon(app: AppInfo, size: Int, modifier: Modifier = Modifier, cornerRadius: Dp = 12.dp) {
+    Box(modifier = modifier.size(size.dp)) {
+        AppIconFill(app = app, cornerRadius = cornerRadius)
     }
 }
 
+/** The app's icon filling its parent, or its initials when it has none. */
 @Composable
-private fun AppMenuDialog(
-    title: String,
-    onDismiss: () -> Unit,
-    content: @Composable ColumnScope.() -> Unit
-) {
-    Dialog(onDismissRequest = onDismiss) {
-        ApplyDialogDim()
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            tonalElevation = 0.dp,
-            modifier = Modifier
-                .fillMaxWidth()
-                .wrapContentHeight()
-        ) {
-            Column(modifier = Modifier.padding(vertical = 8.dp)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp)
-                )
-                content()
-                Spacer(modifier = Modifier.height(4.dp))
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun AppMenuRow(
-    label: String,
-    labelColor: Color = MaterialTheme.colorScheme.onSurface,
-    icon: (@Composable () -> Unit)? = null,
-    onClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .combinedClickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        if (icon != null) {
-            Box(modifier = Modifier.size(18.dp)) { icon() }
-        } else {
-            Spacer(modifier = Modifier.size(18.dp))
-        }
-        Text(label, style = MaterialTheme.typography.bodyLarge, color = labelColor)
-    }
-}
-
-@Composable
-internal fun AppIcon(app: AppInfo, size: Int, modifier: Modifier = Modifier) {
+private fun AppIconFill(app: AppInfo, cornerRadius: Dp) {
+    val shape = RoundedCornerShape(cornerRadius)
     val iconFile = app.iconFile
-    if (iconFile != null) {
+    // Android Studio previews and screenshot tests run no image loader, so decode the icon in place there
+    val previewBitmap = if (LocalInspectionMode.current && iconFile != null) {
+        remember(iconFile) { runCatching { iconFile.inputStream().use { BitmapFactory.decodeStream(it) } }.getOrNull()?.asImageBitmap() }
+    } else {
+        null
+    }
+    if (previewBitmap != null) {
+        Image(
+            bitmap = previewBitmap,
+            contentDescription = app.title,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(shape)
+        )
+    } else if (iconFile != null) {
         AsyncImage(
             model = iconFile,
             contentDescription = app.title,
             contentScale = ContentScale.Crop,
-            modifier = modifier
-                .size(size.dp)
-                .clip(RoundedCornerShape(4.dp))
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(shape)
+                .background(Mocha.Surface0)
         )
     } else {
         Box(
-            modifier = modifier
-                .size(size.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(shape)
+                .background(Mocha.Surface0),
             contentAlignment = Alignment.Center
         ) {
             Text(
-                app.title.take(2).uppercase(),
+                app.title.filter { it.isLetterOrDigit() }.take(2).uppercase(),
                 style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = Mocha.Overlay2
             )
         }
     }
@@ -1352,45 +1251,5 @@ internal fun AppIcon(app: AppInfo, size: Int, modifier: Modifier = Modifier) {
 
 @Composable
 internal fun CompatBadge(app: AppInfo) {
-    val compat = app.compatibility
-    Surface(
-        color = Color(compat.colorHex),
-        shape = RoundedCornerShape(4.dp)
-    ) {
-        Text(
-            stringResource(compat.labelResId),
-            style = MaterialTheme.typography.labelSmall,
-            color = Color(compat.onColorHex),
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-        )
-    }
-}
-
-@Composable
-private fun AppStatusBadges(app: AppInfo) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        CompatBadge(app)
-        if (app.hasCustomConfig) {
-            CustomConfigBadge()
-        }
-    }
-}
-
-@Composable
-private fun CustomConfigBadge() {
-    Surface(
-        color = Color(0xFF2458A6),
-        contentColor = Color(0xFFF6FAFF),
-        shape = RoundedCornerShape(999.dp)
-    ) {
-        Text(
-            text = stringResource(R.string.apps_list_custom_config_badge),
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-        )
-    }
+    CompatLabel(app.compatibility, stringResource(app.compatibility.labelResId))
 }
