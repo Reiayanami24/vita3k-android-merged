@@ -767,7 +767,7 @@ public class Emulator extends SDLActivity
         if(src_icon.exists())
             icon = BitmapFactory.decodeFile(src_icon.getPath());
         else
-            icon = BitmapFactory.decodeResource(getResources(), R.mipmap.ic_launcher);
+            icon = BitmapFactory.decodeResource(getResources(), R.drawable.vita3kai_art);
 
         // intent to directly start the game
         Intent game_intent = createLaunchIntent(getContext(), game_id, game_name);

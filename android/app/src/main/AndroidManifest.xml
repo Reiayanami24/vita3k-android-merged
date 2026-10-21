@@ -90,7 +90,8 @@
     -->
     <application android:name=".Vita3KApplication"
         android:label="@string/app_name"
-        android:icon="@mipmap/ic_launcher_plus"
+        android:icon="@mipmap/ic_launcher_vita3kai"
+        android:roundIcon="@mipmap/ic_launcher_vita3kai"
         android:allowBackup="true"
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
         android:hardwareAccelerated="true"

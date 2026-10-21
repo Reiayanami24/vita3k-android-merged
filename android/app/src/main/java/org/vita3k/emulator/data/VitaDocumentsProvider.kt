@@ -148,7 +148,7 @@ class VitaDocumentsProvider : DocumentsProvider() {
         cursor.newRow().apply {
             add(Root.COLUMN_ROOT_ID, ROOT_ID)
             add(Root.COLUMN_FLAGS, Root.FLAG_SUPPORTS_CREATE or Root.FLAG_SUPPORTS_IS_CHILD or Root.FLAG_LOCAL_ONLY)
-            add(Root.COLUMN_ICON, R.mipmap.ic_launcher_plus)
+            add(Root.COLUMN_ICON, R.mipmap.ic_launcher_vita3kai)
             add(Root.COLUMN_TITLE, "Vita3kAI")
             add(Root.COLUMN_SUMMARY, runCatching { context?.getString(R.string.documents_root_summary) }.getOrNull())
             add(Root.COLUMN_DOCUMENT_ID, DOC_ROOT)
@@ -159,7 +159,7 @@ class VitaDocumentsProvider : DocumentsProvider() {
             cursor.newRow().apply {
                 add(Root.COLUMN_ROOT_ID, ROOT_ID_STORAGE)
                 add(Root.COLUMN_FLAGS, Root.FLAG_SUPPORTS_CREATE or Root.FLAG_SUPPORTS_IS_CHILD or Root.FLAG_LOCAL_ONLY)
-                add(Root.COLUMN_ICON, R.mipmap.ic_launcher_plus)
+                add(Root.COLUMN_ICON, R.mipmap.ic_launcher_vita3kai)
                 add(Root.COLUMN_TITLE, "Vita3kAI storage")
                 add(Root.COLUMN_SUMMARY, runCatching { context?.getString(R.string.documents_storage_root_summary) }.getOrNull())
                 add(Root.COLUMN_DOCUMENT_ID, DOC_ROOT_STORAGE)
