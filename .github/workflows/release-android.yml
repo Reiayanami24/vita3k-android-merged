@@ -1,0 +1,138 @@
+name: Android Release
+
+# Builds a signed Vita3kAI APK and publishes it as a GitHub release.
+# Run it from the Actions tab (it tags the commit with the version from vita3k/CMakeLists.txt),
+# or push a tag such as v1.0.1.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish APK
+    runs-on: ubuntu-latest
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-binary-cache
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Read version
+        run: |
+          get() { sed -n "s/^set($1 \"\{0,1\}\([^\")]*\)\"\{0,1\})$/\1/p" vita3k/CMakeLists.txt; }
+          VERSION="v$(get VITA3K_APP_VER_HI).$(get VITA3K_APP_VER_MID).$(get VITA3K_APP_VER_LO)"
+          BUILD_NUMBER="$(get VITA3K_APP_NUMBER)"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            TAG="${GITHUB_REF_NAME}"
+          else
+            TAG="${VERSION}"
+          fi
+          if [ -z "$BUILD_NUMBER" ] || [ "$VERSION" = "v.." ]; then
+            echo "::error::Could not read the version from vita3k/CMakeLists.txt"
+            exit 1
+          fi
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "::warning::Tag $TAG does not match the app version $VERSION in vita3k/CMakeLists.txt"
+          fi
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "::error::Release $TAG already exists. Bump VITA3K_APP_VER_* and VITA3K_APP_NUMBER in vita3k/CMakeLists.txt first."
+            exit 1
+          fi
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
+          echo "Releasing $TAG (Vita3K Build: $BUILD_NUMBER)"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Check signing secrets
+        env:
+          KEYSTORE_ENCODED: ${{ secrets.KEYSTORE }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          # Every release must carry the same signature, or Android refuses to install it over the last one
+          for name in KEYSTORE_ENCODED SIGNING_STORE_PASSWORD SIGNING_KEY_ALIAS SIGNING_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing repository secret for $name (see Settings > Secrets and variables > Actions)"
+              exit 1
+            fi
+          done
+          echo "$KEYSTORE_ENCODED" | base64 --decode > /home/runner/keystore.jks
+
+      - name: Restore vcpkg binary cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: vcpkg-bincache-android-${{ hashFiles('vcpkg.json', 'CMakeLists.txt', 'cmake/**', '.ci/**', 'android/app/build.gradle', '.github/workflows/c-cpp.yml') }}
+          restore-keys: |
+            vcpkg-bincache-android-
+
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          add-job-summary: on-failure
+          cache-provider: basic
+          validate-wrappers: false
+
+      - name: Set up Android SDK tools
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ''
+
+      - name: Set up Android build environment
+        env:
+          VCPKG_ROOT: /usr/local/share/vcpkg
+        run: |
+          mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+          bash ./.ci/setup-android.sh
+
+      - uses: hendrikmuhs/ccache-action@v1.2.24
+
+      - name: Build Android target
+        env:
+          SIGNING_STORE_PATH: /home/runner/keystore.jks
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          VCPKG_ROOT: /usr/local/share/vcpkg
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
+        run: |
+          bash ./.ci/build-android.sh out
+          mv out/app.apk "out/Vita3kAI-${TAG}-arm64.apk"
+          rm -f /home/runner/keystore.jks
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "Vita3kAI ${TAG} for Android (arm64)."
+            echo
+            echo "Commit: ${GITHUB_SHA}"
+            echo
+            # The in-app updater reads this line, keep it last
+            echo "Vita3K Build: ${BUILD_NUMBER}"
+          } > release-body.md
+          gh release create "$TAG" "out/Vita3kAI-${TAG}-arm64.apk" \
+            --target "$GITHUB_SHA" \
+            --title "Vita3kAI ${TAG}" \
+            --notes-file release-body.md
